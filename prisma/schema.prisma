@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  free
+  lite
+  pro
+}
+
+enum PostStatus {
+  collecting
+  draft
+  published
+  archived
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  plan         Plan     @default(free)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  brands       Brand[]
+}
+
+model Brand {
+  id            String         @id @default(cuid())
+  userId        String
+  name          String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourcePosts   SourcePost[]
+  styleProfile  StyleProfile?
+  posts         Post[]
+
+  @@index([userId])
+}
+
+model SourcePost {
+  id        String   @id @default(cuid())
+  brandId   String
+  rawText   String
+  createdAt DateTime @default(now())
+  brand     Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+}
+
+model StyleProfile {
+  id            String   @id @default(cuid())
+  brandId       String   @unique
+  /// Human-readable style guide from the LLM
+  summaryText   String
+  /// Few-shot anchors: [{ "excerpt": "...", "sourcePostId": "..." }]
+  sampleAnchors Json
+  /// Structured traits for stabler regeneration (optional JSON object)
+  traitsJson    Json?
+  version       Int      @default(1)
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  brand         Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+}
+
+model Post {
+  id          String      @id @default(cuid())
+  brandId     String
+  title       String?
+  /// JSON string array of title candidates when generated
+  titleCandidates Json?
+  body        String?
+  keyword     String?
+  status      PostStatus  @default(collecting)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  brand       Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  images      PostImage[]
+
+  @@index([brandId])
+  @@index([status])
+}
+
+model PostImage {
+  id         String   @id @default(cuid())
+  postId     String
+  imageUrl   String
+  caption    String?
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([postId, orderIndex])
+}
