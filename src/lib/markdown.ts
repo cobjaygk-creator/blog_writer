@@ -1,3 +1,78 @@
+/** Plain text for pasting into Naver/Tistory editors. */
+export function markdownToPlainText(source: string): string {
+  return source
+    .replace(/\r\n/g, "\n")
+    .replace(/```[\s\S]*?```/g, (block) =>
+      block
+        .replace(/^```[^\n]*\n?/, "")
+        .replace(/```$/, "")
+        .trim(),
+    )
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/`(.+?)`/g, "$1")
+    .replace(/^[-*]\s+/gm, "• ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Minimal HTML for editors that accept HTML paste (Tistory HTML mode, etc.). */
+export function markdownToPublishHtml(source: string): string {
+  const escaped = escapeHtml(source.replace(/\r\n/g, "\n"));
+  const lines = escaped.split("\n");
+  const html: string[] = [];
+  let inList = false;
+
+  const closeList = () => {
+    if (inList) {
+      html.push("</ul>");
+      inList = false;
+    }
+  };
+
+  for (const line of lines) {
+    if (/^###\s+/.test(line)) {
+      closeList();
+      html.push(`<h3>${inlinePlain(line.replace(/^###\s+/, ""))}</h3>`);
+      continue;
+    }
+    if (/^##\s+/.test(line)) {
+      closeList();
+      html.push(`<h2>${inlinePlain(line.replace(/^##\s+/, ""))}</h2>`);
+      continue;
+    }
+    if (/^#\s+/.test(line)) {
+      closeList();
+      html.push(`<h1>${inlinePlain(line.replace(/^#\s+/, ""))}</h1>`);
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      if (!inList) {
+        html.push("<ul>");
+        inList = true;
+      }
+      html.push(`<li>${inlinePlain(line.replace(/^[-*]\s+/, ""))}</li>`);
+      continue;
+    }
+    if (!line.trim()) {
+      closeList();
+      continue;
+    }
+    closeList();
+    html.push(`<p>${inlinePlain(line)}</p>`);
+  }
+  closeList();
+  return html.join("\n");
+}
+
+function inlinePlain(text: string) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`(.+?)`/g, "<code>$1</code>");
+}
+
 /** Lightweight markdown → safe HTML for draft preview (no external deps). */
 export function markdownToHtml(source: string): string {
   const escaped = escapeHtml(source.replace(/\r\n/g, "\n"));

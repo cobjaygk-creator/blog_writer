@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PublishExport } from "@/components/PublishExport";
 import { markdownToHtml } from "@/lib/markdown";
 import { buildNewCutDeepLink } from "@/lib/newcut";
 
@@ -52,7 +53,7 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
 
   const statusLabel =
     post.status === "published"
-      ? "발행됨"
+      ? "올림 완료"
       : post.status === "archived"
         ? "보관됨"
         : post.status === "draft"
@@ -218,7 +219,7 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
       setError("발행 전에 본문을 입력하세요.");
       return;
     }
-    if (status === "published" && !confirm("이 초안을 발행 상태로 표시할까요?")) return;
+    if (status === "published" && !confirm("네이버/티스토리에 올렸다면 올림 표시로 바꿀까요?")) return;
     if (status === "archived" && !confirm("이 포스트를 보관할까요?")) return;
 
     setBusy("status");
@@ -459,18 +460,9 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
                   disabled={busy === "status"}
                   onClick={() => setStatus("draft")}
                 >
-                  발행 취소
+                  올림 표시 취소
                 </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy === "status" || !body.trim() || !title.trim()}
-                  onClick={() => setStatus("published")}
-                >
-                  발행 표시
-                </Button>
-              )}
+              ) : null}
               {post.status === "archived" ? (
                 <Button
                   type="button"
@@ -494,6 +486,16 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
           </form>
         </CardContent>
       </Card>
+
+      {(body.trim() || title.trim()) && (
+        <PublishExport
+          title={title}
+          body={body}
+          images={post.images}
+          busy={busy === "status"}
+          onMarkedPublished={() => setStatus("published")}
+        />
+      )}
     </div>
   );
 }

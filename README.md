@@ -2,7 +2,8 @@
 
 AI 블로그 포스트 생성기 (New Cut 쇼츠와 **별도** 서비스).
 
-업체(Brand)별 기존 글 문체를 학습하고, 사진 + 키워드로 블로그 초안을 만듭니다.  
+업체(Brand)별 기존 글 문체를 학습하고, 사진 + 키워드로 블로그 초안을 만든 뒤  
+네이버·티스토리에 복사/붙여넣기로 올리는 워크플로를 지원합니다.  
 New Cut은 메뉴/딥링크로만 연결합니다 (`NEXT_PUBLIC_NEW_CUT_URL`).
 
 ## Stack
@@ -19,7 +20,8 @@ New Cut은 메뉴/딥링크로만 연결합니다 (`NEXT_PUBLIC_NEW_CUT_URL`).
 2. 업체 CRUD · 원문(SourcePost) · 스타일 학습(StyleProfile)
 3. 포스트 생성 · 사진 업로드(S3 또는 로컬 `public/uploads`) · 비전 캡션 · 순서 변경
 4. StyleProfile + 키워드 + 캡션으로 초안 생성 · 마크다운 편집
-5. New Cut 딥링크 (`?from=blog_writer&source=blog#/studio/create`)
+5. 네이버/티스토리용 제목·본문·사진 복사 패널
+6. New Cut 딥링크 (`?from=blog_writer&source=blog#/studio/create`)
 
 LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있습니다.  
 연동 상태: `GET /api/integrations/status`

@@ -19,8 +19,8 @@ export default async function HomePage() {
         AI 블로그 포스트 생성기
       </h1>
       <p className="mt-4 max-w-xl text-base leading-7 text-zinc-600">
-        업체별 기존 글을 학습해 문체 프로필을 만들고, 사진과 키워드로 블로그 초안을 생성합니다.
-        New Cut(쇼츠)과 분리된 서비스이며, 메뉴에서 바로 연결할 수 있습니다.
+        업체 문체를 학습한 뒤 사진·키워드로 블로그 글을 만들고, 네이버·티스토리에 복사해 올릴 수 있게 돕습니다.
+        New Cut 쇼츠와도 메뉴로 연결됩니다.
       </p>
       <div className="mt-8 flex flex-wrap gap-3">
         {session?.user ? (
@@ -42,9 +42,9 @@ export default async function HomePage() {
         </a>
       </div>
       <ol className="mt-12 max-w-xl space-y-2 text-sm leading-6 text-zinc-600">
-        <li>1. 업체 생성 후 기존 글을 원문으로 등록</li>
-        <li>2. 문체 학습으로 StyleProfile 생성</li>
-        <li>3. 사진 업로드·캡션·순서 정리 후 초안 생성</li>
+        <li>1. 업체 생성 후 기존 글(URL/붙여넣기)로 문체 학습</li>
+        <li>2. 사진·키워드로 초안 생성</li>
+        <li>3. 제목·본문 복사 → 네이버/티스토리에 붙여넣기</li>
       </ol>
     </main>
   );
