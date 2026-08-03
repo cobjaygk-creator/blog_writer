@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getOwnedBrand, jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
+import { assertCanAddSourcePost } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
 
 const createSchema = z.object({
@@ -41,6 +42,9 @@ export async function POST(request: Request, { params }: Params) {
   if (!parsed.success) {
     return jsonError("원문은 20자 이상 20,000자 이하여야 합니다.", 400);
   }
+
+  const limitError = await assertCanAddSourcePost(userId!, id);
+  if (limitError) return limitError;
 
   const sourcePost = await prisma.sourcePost.create({
     data: {

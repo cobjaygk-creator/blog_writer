@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
+import { assertCanCreateBrand } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
 
 const createSchema = z.object({
@@ -35,6 +36,9 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return jsonError("업체 이름(1–80자)이 필요합니다.", 400);
   }
+
+  const limitError = await assertCanCreateBrand(userId!);
+  if (limitError) return limitError;
 
   const brand = await prisma.brand.create({
     data: {

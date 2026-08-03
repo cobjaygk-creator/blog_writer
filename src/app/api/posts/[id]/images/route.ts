@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { getOwnedPost, jsonError, requireUserId } from "@/lib/api-helpers";
-import { uploadMaxBytes, uploadMaxImagesPerPost } from "@/lib/integrations";
+import { uploadMaxBytes } from "@/lib/integrations";
+import { assertCanAddImage } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
 import { uploadImageBuffer } from "@/lib/storage";
 import { captionImage } from "@/lib/vision";
@@ -18,9 +19,8 @@ export async function POST(request: Request, { params }: Params) {
   const post = await getOwnedPost(id, userId!);
   if (!post) return jsonError("포스트를 찾을 수 없습니다.", 404);
 
-  if (post.images.length >= uploadMaxImagesPerPost()) {
-    return jsonError(`이미지는 포스트당 최대 ${uploadMaxImagesPerPost()}장까지입니다.`, 400);
-  }
+  const limitError = await assertCanAddImage(userId!, post.images.length);
+  if (limitError) return limitError;
 
   let form: FormData;
   try {

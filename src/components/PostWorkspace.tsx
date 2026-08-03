@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { markdownToHtml } from "@/lib/markdown";
 import { buildNewCutDeepLink } from "@/lib/newcut";
 
 type PostImage = {
@@ -39,12 +40,24 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
   const [body, setBody] = useState(initialPost.body || "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [editorTab, setEditorTab] = useState<"edit" | "preview">("edit");
 
   const titleCandidates = useMemo(() => {
     return Array.isArray(post.titleCandidates)
       ? post.titleCandidates.filter((t): t is string => typeof t === "string")
       : [];
   }, [post.titleCandidates]);
+
+  const previewHtml = useMemo(() => markdownToHtml(body || ""), [body]);
+
+  const statusLabel =
+    post.status === "published"
+      ? "발행됨"
+      : post.status === "archived"
+        ? "보관됨"
+        : post.status === "draft"
+          ? "초안"
+          : "수집 중";
 
   async function uploadImages(files: FileList | null) {
     if (!files?.length) return;
@@ -197,11 +210,28 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
   }
 
   async function setStatus(status: "published" | "archived" | "draft") {
+    if (status === "published" && !title.trim()) {
+      setError("발행 전에 제목을 입력하세요.");
+      return;
+    }
+    if (status === "published" && !body.trim()) {
+      setError("발행 전에 본문을 입력하세요.");
+      return;
+    }
+    if (status === "published" && !confirm("이 초안을 발행 상태로 표시할까요?")) return;
+    if (status === "archived" && !confirm("이 포스트를 보관할까요?")) return;
+
     setBusy("status");
+    setError(null);
     const res = await fetch(`/api/posts/${post.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        title: title || undefined,
+        body: body || undefined,
+        keyword: keyword || null,
+      }),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
     setBusy(null);
@@ -210,6 +240,8 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
       return;
     }
     setPost(data.post);
+    setTitle(data.post.title || "");
+    setBody(data.post.body || "");
   }
 
   const newCutUrl = buildNewCutDeepLink({
@@ -232,7 +264,17 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge>{post.status}</Badge>
+          <Badge
+            className={
+              post.status === "published"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : post.status === "archived"
+                  ? "border-zinc-300 bg-zinc-100 text-zinc-600"
+                  : undefined
+            }
+          >
+            {statusLabel}
+          </Badge>
           <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
             <Button type="button" variant="outline" size="sm">
               New Cut으로
@@ -346,8 +388,24 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>초안 편집기</CardTitle>
+          <div className="flex rounded-lg border border-zinc-200 p-0.5 text-xs">
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 ${editorTab === "edit" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+              onClick={() => setEditorTab("edit")}
+            >
+              편집
+            </button>
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 ${editorTab === "preview" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+              onClick={() => setEditorTab("preview")}
+            >
+              미리보기
+            </button>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={saveDraft} className="space-y-4">
@@ -369,36 +427,68 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
                 ))}
               </div>
             ) : null}
-            <Label>
-              <span>본문 (마크다운)</span>
-              <Textarea
-                rows={18}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                className="font-mono text-[13px] leading-6"
-                placeholder="초안을 생성하면 여기에 본문이 채워집니다."
-              />
-            </Label>
+            {editorTab === "edit" ? (
+              <Label>
+                <span>본문 (마크다운)</span>
+                <Textarea
+                  rows={18}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  className="font-mono text-[13px] leading-6"
+                  placeholder="초안을 생성하면 여기에 본문이 채워집니다."
+                />
+              </Label>
+            ) : (
+              <div className="min-h-[28rem] rounded-lg border border-zinc-200 bg-white px-4 py-3">
+                {body.trim() ? (
+                  <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                ) : (
+                  <p className="text-sm text-zinc-500">미리볼 본문이 없습니다.</p>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button type="submit" disabled={busy === "save"}>
                 {busy === "save" ? "저장 중…" : "초안 저장"}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy === "status" || !body}
-                onClick={() => setStatus("published")}
-              >
-                발행 표시
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy === "status"}
-                onClick={() => setStatus("archived")}
-              >
-                보관
-              </Button>
+              {post.status === "published" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy === "status"}
+                  onClick={() => setStatus("draft")}
+                >
+                  발행 취소
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy === "status" || !body.trim() || !title.trim()}
+                  onClick={() => setStatus("published")}
+                >
+                  발행 표시
+                </Button>
+              )}
+              {post.status === "archived" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy === "status"}
+                  onClick={() => setStatus("draft")}
+                >
+                  보관 해제
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy === "status"}
+                  onClick={() => setStatus("archived")}
+                >
+                  보관
+                </Button>
+              )}
             </div>
           </form>
         </CardContent>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getOwnedBrand, jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
+import { assertCanCreatePost } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
 
 const createSchema = z.object({
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
 
   const brand = await getOwnedBrand(parsed.data.brandId, userId!);
   if (!brand) return jsonError("업체를 찾을 수 없습니다.", 404);
+
+  const limitError = await assertCanCreatePost(userId!);
+  if (limitError) return limitError;
 
   const post = await prisma.post.create({
     data: {

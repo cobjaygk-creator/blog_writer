@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { auth, signOut } from "@/lib/auth";
 import { buildNewCutDeepLink } from "@/lib/newcut";
+import { getPlanLimits, normalizePlan } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 
 export default async function DashboardPage() {
@@ -47,6 +48,8 @@ export default async function DashboardPage() {
   }
 
   const newCutUrl = buildNewCutDeepLink({ from: "blog_writer" });
+  const plan = normalizePlan(session.user.plan);
+  const limits = getPlanLimits(plan);
 
   return (
     <>
@@ -55,7 +58,15 @@ export default async function DashboardPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">대시보드</h1>
-            <p className="mt-1 text-sm text-zinc-600">{session.user.email}</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              {session.user.email}
+              <span className="mx-2 text-zinc-300">·</span>
+              <span className="uppercase tracking-wide">{plan}</span>
+              <span className="ml-2 text-zinc-500">
+                업체 {limits.brands} · 원문/업체 {limits.sourcePostsPerBrand} · 이미지/포스트{" "}
+                {limits.imagesPerPost}
+              </span>
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
