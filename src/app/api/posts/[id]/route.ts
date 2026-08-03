@@ -9,7 +9,6 @@ const updateSchema = z.object({
   body: z.string().max(100000).optional(),
   keyword: z.string().trim().min(1).max(120).optional().nullable(),
   productHighlights: z.string().trim().max(2000).optional().nullable(),
-  /** Ignored — brand learned tone is always used. */
   captionTone: z.string().trim().min(1).max(200).optional().nullable(),
   status: z.enum(["collecting", "draft", "published", "archived"]).optional(),
   headerTemplateId: z.string().min(1).nullable().optional(),
@@ -76,6 +75,10 @@ export async function PATCH(request: Request, { params }: Params) {
         parsed.data.productHighlights === undefined
           ? undefined
           : parsed.data.productHighlights?.trim() || null,
+      captionTone:
+        parsed.data.captionTone === undefined
+          ? undefined
+          : parsed.data.captionTone?.trim() || null,
       status: parsed.data.status,
       headerTemplateId:
         parsed.data.headerTemplateId === undefined ? undefined : parsed.data.headerTemplateId,

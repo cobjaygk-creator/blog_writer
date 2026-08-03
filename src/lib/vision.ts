@@ -76,11 +76,13 @@ async function toVisionAccessibleUrl(imageUrl: string): Promise<string> {
 
 export type CaptionImageOptions = {
   keyword?: string | null;
+  /** @deprecated Scene keywords ignore prose tone; kept for call-site compat. */
   tone?: string | null;
   /** Optional product highlight already matched to this photo (0~1). */
   factHighlight?: string | null;
 };
 
+/** Suggest short scene keywords for a photo (stored in PostImage.caption). */
 export async function captionImage(
   imageUrl: string,
   keywordOrOptions?: string | null | CaptionImageOptions,
@@ -90,7 +92,6 @@ export async function captionImage(
       ? keywordOrOptions
       : { keyword: keywordOrOptions };
   const keyword = options.keyword;
-  const tone = options.tone?.trim() || "";
   const factHighlight = options.factHighlight?.trim() || "";
 
   const { apiKey, baseUrl, model } = getVisionConfig();
@@ -100,7 +101,7 @@ export async function captionImage(
       throw new Error("VISION_API_KEY(또는 LLM_API_KEY)가 설정되지 않았습니다.");
     }
     return {
-      caption: fallbackCaption(imageUrl, keyword),
+      caption: fallbackSceneKeywords(imageUrl, keyword),
       usedFallback: true,
       provider: "fallback",
     };
@@ -108,11 +109,8 @@ export async function captionImage(
 
   try {
     const visionUrl = await toVisionAccessibleUrl(imageUrl);
-    const toneLine = tone
-      ? `문체/톤: "${tone}". 이 톤에 맞게 쓰되, 사실 왜곡은 하지 마세요.`
-      : "";
     const factLine = factHighlight
-      ? `관련 제품 포인트(사진과 직접 관련될 때만 자연스럽게 1회 연결, 안 보이면 무시): "${factHighlight}"`
+      ? `관련 제품 포인트(사진과 직접 관련될 때만 · 뒤에 짧게 붙임, 안 보이면 무시): "${factHighlight}"`
       : "";
     const response = await fetchWithTimeout(
       `${baseUrl}/chat/completions`,
@@ -124,17 +122,19 @@ export async function captionImage(
         },
         body: JSON.stringify({
           model,
-          temperature: 0.3,
-          max_tokens: visionMaxTokens(),
+          temperature: 0.2,
+          max_tokens: Math.min(visionMaxTokens(), 120),
           messages: [
             {
               role: "system",
               content: [
-                "당신은 시공/제품 블로그용 한국어 이미지 캡션 작가입니다.",
-                "1순위: 사진에 실제로 보이는 것. 2순위: 주어진 제품 포인트(관련될 때만).",
-                "색·재질·위치·작업 상태를 구체적으로. 추측·과장·없는 요소 금지.",
-                "라이프스타일 형용사 나열 금지. 따옴표 없이 본문만 1~2문장.",
-                toneLine,
+                "당신은 시공/제품 블로그용 장면 키워드 추출기입니다.",
+                "완성 문장·감탄·형용사 나열·이모지 금지. 따옴표 없이 키워드만.",
+                "형식: 장면유형 · 보이는 사실 · (선택) 제품 포인트",
+                "길이 20~80자. 예: 박스 포장 · 장착 전 · 꼼꼼한 포장",
+                "예: 구성품 · 본품, 볼트와 너트",
+                "예: 장착 완료 · 루프박스 체결부",
+                "1순위: 사진에 실제로 보이는 것. 추측·과장·없는 스펙 금지.",
                 factLine,
               ]
                 .filter(Boolean)
@@ -146,12 +146,10 @@ export async function captionImage(
                 {
                   type: "text",
                   text: keyword
-                    ? `키워드 "${keyword}" 맥락의 블로그용 캡션입니다. 사진에 보이는 사실을 우선하세요.${
-                        factHighlight ? ` 가능하면 제품 포인트와 연결하세요.` : ""
-                      }${tone ? ` 톤은 "${tone}"에 맞추세요.` : ""}`
-                    : `이 사진에 보이는 장면을 시공 작업기 톤으로 사실 위주로 설명하세요.${
-                        tone ? ` 톤은 "${tone}"에 맞추세요.` : ""
-                      }`,
+                    ? `포스트 키워드 "${keyword}" 맥락입니다. 이 사진의 장면 키워드만 추출하세요.${
+                        factHighlight ? " 관련되면 제품 포인트를 짧게 붙이세요." : ""
+                      }`
+                    : "이 사진의 장면 키워드만 추출하세요.",
                 },
                 { type: "image_url", image_url: { url: visionUrl } },
               ],
@@ -170,7 +168,7 @@ export async function captionImage(
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
-    const text = data.choices?.[0]?.message?.content?.trim();
+    const text = sanitizeSceneKeywords(data.choices?.[0]?.message?.content?.trim() || "");
     if (!text) {
       throw new Error("Vision 응답이 비어 있습니다.");
     }
@@ -179,7 +177,7 @@ export async function captionImage(
     if (!allowFallback()) throw error;
     console.warn("[vision] provider failed, using fallback:", error);
     return {
-      caption: fallbackCaption(imageUrl, keyword),
+      caption: fallbackSceneKeywords(imageUrl, keyword),
       usedFallback: true,
       provider: "fallback",
     };
@@ -190,10 +188,20 @@ export function visionReady() {
   return isVisionConfigured();
 }
 
-function fallbackCaption(imageUrl: string, keyword?: string | null) {
+function sanitizeSceneKeywords(raw: string) {
+  const oneLine = raw
+    .replace(/^["'「『]|["'」』]$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (oneLine.length <= 80) return oneLine;
+  return `${oneLine.slice(0, 80).trim()}`;
+}
+
+function fallbackSceneKeywords(imageUrl: string, keyword?: string | null) {
   const file = imageUrl.split("/").pop()?.split("?")[0] || "image";
-  if (keyword) {
-    return `${keyword} 장면 — ${file} (로컬 캡션 폴백)`;
+  const short = file.replace(/\.[^.]+$/, "").slice(0, 24);
+  if (keyword?.trim()) {
+    return `사진 · ${keyword.trim()} · ${short}`;
   }
-  return `업로드된 사진 ${file}의 장면입니다. (로컬 캡션 폴백)`;
+  return `사진 · ${short}`;
 }

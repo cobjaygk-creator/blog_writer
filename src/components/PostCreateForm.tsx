@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  BRAND_CAPTION_TONE,
+  captionToneOptions,
+} from "@/lib/caption-tones";
 
 export type PostCreateBrandOption = {
   id: string;
@@ -33,9 +37,16 @@ export function PostCreateForm({
 
   const [brandId, setBrandId] = useState(defaultBrandId);
   const [keyword, setKeyword] = useState("");
+  const [captionTone, setCaptionTone] = useState(BRAND_CAPTION_TONE);
   const [productHighlights, setProductHighlights] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const selectedBrand = learnedBrands.find((b) => b.id === brandId);
+  const toneOptions = useMemo(
+    () => captionToneOptions(selectedBrand?.brandTone),
+    [selectedBrand?.brandTone],
+  );
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -52,6 +63,7 @@ export function PostCreateForm({
         brandId,
         keyword: keyword.trim() || undefined,
         productHighlights: productHighlights.trim() || undefined,
+        captionTone: captionTone || BRAND_CAPTION_TONE,
       }),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string; post?: { id: string } };
@@ -93,13 +105,30 @@ export function PostCreateForm({
         <select
           className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
           value={brandId}
-          onChange={(e) => setBrandId(e.target.value)}
+          onChange={(e) => {
+            setBrandId(e.target.value);
+            setCaptionTone(BRAND_CAPTION_TONE);
+          }}
           required
         >
           {learnedBrands.map((brand) => (
             <option key={brand.id} value={brand.id}>
               {brand.name}
               {brand.styleVersion ? ` (스타일 v${brand.styleVersion})` : ""}
+            </option>
+          ))}
+        </select>
+      </Label>
+      <Label>
+        <span>문장체 (말투)</span>
+        <select
+          className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+          value={captionTone}
+          onChange={(e) => setCaptionTone(e.target.value)}
+        >
+          {toneOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
             </option>
           ))}
         </select>
@@ -123,7 +152,7 @@ export function PostCreateForm({
           maxLength={2000}
         />
         <span className="mt-1 block text-xs font-normal text-zinc-500">
-          비우면 키워드에서 제품을 알 수 있을 때 자동으로 조사합니다. 캡션·초안은 업체 학습 톤을 따릅니다.
+          비우면 키워드에서 제품을 알 수 있을 때 자동으로 조사합니다. 초안 말투는 문장체 옵션을 따릅니다.
         </span>
       </Label>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}

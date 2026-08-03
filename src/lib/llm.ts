@@ -276,24 +276,33 @@ const DRAFT_SYSTEM = `당신은 네이버/티스토리 감성의 한국어 블�
 body 작성 규칙:
 1) HTML만 사용 (마크다운 금지). 허용 태그: p, br, h2, h3, strong, em, ul, li, span, img, div
 2) 학습된 줄바꿈 리듬을 따르세요. 긴 문단 금지. 한 문단은 1~2문장, 호흡마다 새 <p>
-3) 학습된 frequentEmojis / emojiUsage에 맞춰 이모지를 자연스럽게 배치 (소제목·감탄·마무리)
-4) 강조: 핵심 키워드는 <strong>, 포인트 문장/단어는 <span style="color:#HEX"> 사용 (colorPalette에서 선택)
-5) 소제목은 <h2 style="font-size:22px;color:#HEX"> 또는 <h3 style="font-size:18px">처럼 크기·색을 섞어 밋밋하지 않게
-6) 본문 일부에 <span style="font-size:15px"> / 18px 등 fontSizes를 반영
-7) 사진은 반드시 제공 URL 그대로 사용(변경·생략 금지). 배치 규칙은 아래 "사진 배치"를 절대적으로 따릅니다.
-   - [단독] 슬롯: 반드시 세로로 하나씩 <p><img src="URL" alt="캡션" style="${SINGLE_IMAGE_STYLE}" /></p> (나란히/그리드 금지)
+3) 이모지 적극 사용(필수):
+   - frequentEmojis를 우선 사용. 없으면 시공/자동차 맥락 이모지(🔧✨👍🚗📦✅🙏) 사용
+   - 제목·모든 h2/h3·도입·마무리 CTA·사진 직후 문장에 이모지를 넣으세요
+   - 밋밋한 순수 텍스트 단락만 이어지지 않게, 2~3문단마다 최소 1개 이모지
+4) 강조·색 적극 사용(필수):
+   - 제품명·스펙·핵심 동사마다 <strong> 또는 <span style="color:#HEX"> (colorPalette 순환)
+   - 단락마다 최소 1회 색상/강조. 회색 밋밋한 본문만 쓰지 말 것
+5) 글자 크기 적극 사용(필수) — 반드시 <span style="font-size:..."> 안에 넣으세요 (h2/h3 태그 style은 에디터가 버림):
+   - 소제목: <h2><span style="font-size:22px;color:#HEX">제목 ✨</span></h2>
+   - 소소제목: <h3><span style="font-size:18px;color:#HEX">소제목</span></h3>
+   - 포인트 문장: <p><span style="font-size:18px">...</span></p>
+   - 보조 설명: <p><span style="font-size:15px">...</span></p>
+   - 크기·색이 없는 plain <p>만 연속되면 실패로 간주하고 서식을 넣으세요
+6) 사진은 반드시 제공 URL 그대로 사용(변경·생략 금지). 배치 규칙은 아래 "사진 배치"를 절대적으로 따릅니다.
+   - [단독] 슬롯: 반드시 세로로 하나씩 <p><img src="URL" alt="장면키워드" style="${SINGLE_IMAGE_STYLE}" /></p> (나란히/그리드 금지)
    - [묶음] 슬롯만 image-group 사용:
      <div data-type="image-group" data-cols="2" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0;">...</div>
    - 사용자가 묶지 않은 사진을 임의로 묶지 마세요.
-8) 사진 캡션 일치(최우선):
-   - 각 사진의 "캡션"은 그 사진의 사실입니다. 바로 위/아래 문장은 캡션 내용을 문체에 맞게 풀어 쓰세요.
-   - 캡션에 없는 색·재질·패턴·상태를 지어내지 마세요. (예: 캡션이 검정 다이아몬드인데 나무바닥이라고 쓰면 안 됨)
-   - 캡션을 무시하고 키워드만으로 장면을 바꾸지 마세요.
-   - 사진 직후 캡션을 풀어쓴 문장만 두고, 빈 <p></p> / <p><br></p> 는 넣지 마세요.
-9) 시공 작업기 흐름: 짧은 도입 → 제품/작업 포인트 → 사진별 설명 → CTA. 라이프스타일 감성 소개문 금지
-10) 같은 문장 패턴 반복 금지. "세련된 변신/매력적으로 변신/유익한 정보로 돌아오겠습니다" 류 금지
-11) 설명조 보고서 문체 금지. 원문·유사 사례의 용어·호흡·시공 표현을 적극 반영
-12) HTML 전체를 코드블록으로 감싸지 말 것`;
+7) 장면 키워드 → 문장체 확장(최우선):
+   - 각 단락의 "장면 키워드"는 사용자가 확정한 사실 메모입니다. 키워드를 그대로 복붙하지 말고 지정된 말투로 풀어 쓰세요.
+   - 키워드에 없는 색·재질·스펙·상태를 지어내지 마세요.
+   - 부족한 스펙·특장점은 제품 팩트(검색/수동)로만 보강하고, 팩트에도 없으면 쓰지 마세요.
+   - 단락마다: (짧은 도입 문장+이모지) → 이미지 → (키워드+관련 팩트를 말투로 풀어쓴 1문장, 강조/색 포함). 빈 <p></p> / <p><br></p> 금지.
+8) 시공 작업기 흐름: 짧은 도입 → 제품/작업 포인트 → 사진별 설명 → CTA. 라이프스타일 감성 소개문 금지
+9) 같은 문장 패턴 반복 금지. "세련된 변신/매력적으로 변신/유익한 정보로 돌아오겠습니다" 류 금지
+10) 설명조 보고서 문체 금지. 원문·유사 사례의 용어·호흡·시공 표현을 적극 반영
+11) HTML 전체를 코드블록으로 감싸지 말 것`;
 
 export type DraftImageSlot = {
   type: "single" | "group";
@@ -314,8 +323,12 @@ export async function generateBlogDraft(input: {
     highlights: string[];
     caution?: string;
   } | null;
+  /** Overrides StyleTraits.tone for this draft (말투). */
+  voiceTone?: string | null;
 }): Promise<DraftGenerateResult> {
   const traits = normalizeExtendedTraits(input.traitsJson);
+  const voiceTone = input.voiceTone?.trim() || traits.tone;
+  const draftTraits = { ...traits, tone: voiceTone };
   const anchors = input.sampleAnchors
     .map((a, i) => `--- 샘플 ${i + 1} ---\n${a.excerpt}`)
     .join("\n\n");
@@ -327,13 +340,19 @@ export async function generateBlogDraft(input: {
       )
       .join("\n\n") || "";
   const imageLines = formatImageSlotLines(input.imageSlots, input.images);
-  const captionFacts = formatCaptionFacts(input.imageSlots, input.images);
-  const hasCaptions = captionFacts !== "(캡션 없음)";
+  const sceneKeywords = formatSceneKeywords(input.imageSlots, input.images);
+  const hasSceneKeywords = sceneKeywords !== "(장면 키워드 없음)";
   const productBlock = input.productFacts?.highlights?.length
     ? `제품: ${input.productFacts.productName}\n특장점:\n${input.productFacts.highlights
         .map((h) => `- ${h}`)
-        .join("\n")}\n주의: ${input.productFacts.caution || "사진에 안 보이면 쓰지 말 것"}`
-    : "(없음)";
+        .join("\n")}\n주의: ${input.productFacts.caution || "키워드·사진과 관련될 때만. 불확실 스펙 금지"}`
+    : "(없음 — 키워드에 없는 스펙은 추측하지 말 것)";
+  const accent =
+    draftTraits.colorPalette.find((c) => c.toUpperCase() !== "#222222") || "#E85D04";
+  const emojiPool =
+    draftTraits.frequentEmojis.length > 0
+      ? draftTraits.frequentEmojis.join(" ")
+      : "🔧 ✨ 👍 🚗 📦 ✅ 🙏";
 
   const { result, usedFallback, provider } = await withProviderFallback(
     async () => {
@@ -345,16 +364,25 @@ export async function generateBlogDraft(input: {
             content: `업체: ${input.brandName}
 키워드: ${input.keyword}
 
+이번 글 말투(최우선, 문장체 옵션): ${voiceTone}
+오프닝 스타일: ${draftTraits.openerStyle}
+클로징 스타일: ${draftTraits.closerStyle}
+
 문체·편집 요약:
 ${input.styleSummary}
 
-편집 특성(JSON):
-${JSON.stringify(traits, null, 2)}
+편집 특성(JSON, tone은 위 말투로 이미 반영됨):
+${JSON.stringify(draftTraits, null, 2)}
 
-학습 용어(domainTerms): ${(traits.domainTerms || []).join(", ") || "(없음)"}
-학습 CTA: ${(traits.ctaPhrases || []).join(", ") || "(없음)"}
-글 골격: ${(traits.sectionPatterns || []).join(" → ") || "(없음)"}
-금지 표현: ${(traits.bannedFluff || []).join(" / ") || "(없음)"}
+사용할 이모지 풀: ${emojiPool}
+강조색 예시: ${accent} (colorPalette: ${draftTraits.colorPalette.join(", ") || accent})
+글자 크기 풀: ${(draftTraits.fontSizes || []).join(", ") || "15px, 18px, 22px"}
+
+학습 용어(domainTerms): ${(draftTraits.domainTerms || []).join(", ") || "(없음)"}
+학습 제품명(productMentions, 관련될 때만 자연스럽게): ${(draftTraits.productMentions || []).join(", ") || "(없음)"}
+학습 CTA: ${(draftTraits.ctaPhrases || []).join(", ") || "(없음)"}
+글 골격: ${(draftTraits.sectionPatterns || []).join(" → ") || "(없음)"}
+금지 표현: ${(draftTraits.bannedFluff || []).join(" / ") || "(없음)"}
 
 원문 샘플(리듬·이모지·말투 참고, 내용 복붙 금지):
 ${anchors || "(없음)"}
@@ -362,27 +390,29 @@ ${anchors || "(없음)"}
 유사 사례(시공 용어·섹션 흐름·호응을 강하게 참고. 문장 복붙 금지. 사례의 차종·색·가격·사진 사실은 새 글에 옮기지 말 것):
 ${similar || "(없음)"}
 
-제품 팩트(사진과 관련될 때만 사용):
+제품 팩트(검색/수동 — 단락 키워드에 없는 스펙 보강용. 관련될 때만):
 ${productBlock}
 
-사진별 사실 캡션(본문 서술의 근거. 이와 모순되면 안 됨):
-${captionFacts}
+단락별 장면 키워드(사용자 입력 우선. 사실 근거. 이와 모순되면 안 됨. 복붙 금지 → 말투로 확장):
+${sceneKeywords}
 
 사진 배치(사용자가 정한 단독/묶음만 사용. 임의 묶음 금지):
 ${imageLines}
 
 요청:
-- 사실 우선순위: 1) 사진 캡션 2) 매칭된 제품 팩트 3) 유사 사례 용어·흐름 4) 문체 프로필
-- 시공점 작업기 톤으로 쓰세요. 형용사 나열·라이프스타일 맺음말 금지.
-- 학습 용어·CTA를 자연스럽게 넣고, bannedFluff 표현은 쓰지 마세요.
-- 사진마다: (짧은 시공/제품 문장) → 이미지 → (캡션+관련 팩트를 문체로 풀어쓴 1문장).
+- 사실 우선순위: 1) 단락 장면 키워드 2) 제품 팩트 3) 유사 사례 용어·흐름 4) 편집 프로필
+- 모든 문장은 "${voiceTone}" 말투로 쓰세요. opener/closer 스타일을 반영하세요.
+- 장면 키워드를 복붙하지 말고 말투로 풀어 쓰세요. 없는 스펙은 제품 팩트로만 보강.
+- 이모지·색상·글자 크기·strong을 적극 사용하세요. 밋밋한 plain 텍스트만 나오면 안 됩니다.
+- 학습 용어·productMentions·CTA를 자연스럽게 넣고, bannedFluff 표현은 쓰지 마세요.
+- 단락마다: (짧은 시공/제품 문장+이모지+강조) → 이미지 → (키워드+팩트 풀어쓴 1문장, 색/크기 포함).
 - [단독]은 세로 1장씩, [묶음]만 가로 그리드.
-- 제목에도 필요하면 이모지를 넣되 과하지 않게.`,
+- 제목에도 이모지를 넣으세요.`,
           },
         ],
         {
           json: true,
-          temperature: hasCaptions ? 0.45 : 0.6,
+          temperature: hasSceneKeywords ? 0.5 : 0.65,
           maxTokens: Math.max(llmMaxTokens(), 3500),
         },
       );
@@ -398,7 +428,7 @@ ${imageLines}
         const rawBody =
           typeof parsed.body === "string" && parsed.body.trim()
             ? parsed.body.trim()
-            : fallbackDraft(input, traits).body;
+            : fallbackDraft(input, draftTraits).body;
         return {
           title,
           titleCandidates: titleCandidates.length ? titleCandidates : [title],
@@ -408,7 +438,7 @@ ${imageLines}
         throw new Error("LLM 초안 JSON 파싱에 실패했습니다.");
       }
     },
-    () => fallbackDraft(input, traits),
+    () => fallbackDraft(input, draftTraits),
     "draft-generate",
   );
 
@@ -452,12 +482,12 @@ function formatImageSlotLines(
       .map((slot, i) => {
         if (slot.type === "single") {
           const img = slot.images[0];
-          return `${i + 1}. [단독] URL=${img.imageUrl}\n   필수캡션: ${img.caption?.trim() || "(없음 — 보이는 장면만 일반 서술)"}`;
+          return `${i + 1}. [단독] URL=${img.imageUrl}\n   장면키워드: ${img.caption?.trim() || "(없음 — 보이는 장면만 일반 서술)"}`;
         }
         const cols = slot.images.length >= 3 ? 3 : 2;
         const urls = slot.images.map((img, j) => `  - ${j + 1}) URL=${img.imageUrl}`).join("\n");
         const caption = slot.images[0]?.caption?.trim() || "(없음)";
-        return `${i + 1}. [단락 묶음 ${slot.images.length}장 / ${cols}열]\n   단락캡션: ${caption}\n${urls}`;
+        return `${i + 1}. [단락 묶음 ${slot.images.length}장 / ${cols}열]\n   장면키워드: ${caption}\n${urls}`;
       })
       .join("\n");
   }
@@ -465,12 +495,12 @@ function formatImageSlotLines(
   return images
     .map(
       (img, i) =>
-        `${i + 1}. [단락] URL=${img.imageUrl}\n   단락캡션: ${img.caption?.trim() || `사진 ${i + 1}`}`,
+        `${i + 1}. [단락] URL=${img.imageUrl}\n   장면키워드: ${img.caption?.trim() || `사진 ${i + 1}`}`,
     )
     .join("\n");
 }
 
-function formatCaptionFacts(
+function formatSceneKeywords(
   slots: DraftImageSlot[] | undefined,
   images: PublishImageInput[],
 ) {
@@ -490,7 +520,7 @@ function formatCaptionFacts(
           return `${i + 1}. ${caption}`;
         })
         .filter(Boolean);
-  return lines?.length ? lines.join("\n") : "(캡션 없음)";
+  return lines?.length ? lines.join("\n") : "(장면 키워드 없음)";
 }
 
 function fallbackDraft(
@@ -511,17 +541,21 @@ function fallbackDraft(
   const slots = input.imageSlots?.length
     ? input.imageSlots
     : input.images.map((img) => ({ type: "single" as const, images: [img] }));
+  const emoji2 = t.frequentEmojis[1] || "🔧";
   const imageBlocks = slots
-    .map((slot) => {
+    .map((slot, slotIndex) => {
       if (slot.type === "group" && slot.images.length >= 2) {
-        return buildGroupedImagesHtml(slot.images, slot.images.length >= 3 ? 3 : 2);
+        const kw = (slot.images[0]?.caption || "사진").replace(/"/g, "");
+        return `<p><span style="font-size:18px;color:${accent}">${emoji2} <strong>${kw}</strong></span></p>
+${buildGroupedImagesHtml(slot.images, slot.images.length >= 3 ? 3 : 2)}
+<p><span style="font-size:15px">${kw} 장면을 정리했어요 ${emoji}</span></p>`;
       }
       return slot.images
         .map((img) => {
-          const caption = (img.caption || "사진").replace(/"/g, "");
-          return `<p>${caption}</p>
-<p>${singleImageTag(img.imageUrl, caption)}</p>
-<p><em>${caption}</em></p>`;
+          const keywords = (img.caption || "사진").replace(/"/g, "");
+          return `<p><span style="font-size:18px;color:${accent}">${emoji2} <strong>${keywords}</strong></span></p>
+<p>${singleImageTag(img.imageUrl, keywords)}</p>
+<p><span style="font-size:15px">${keywords} 장면을 정리했어요 ${slotIndex % 2 === 0 ? emoji : emoji2}</span></p>`;
         })
         .join("\n");
     })

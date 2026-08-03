@@ -1,3 +1,5 @@
+import { ensureTypographyRhythm } from "@/lib/typography-rhythm";
+
 /** Unified inline styles so editor + Naver paste look consistent. */
 export const SINGLE_IMAGE_STYLE =
   "display:block;width:100%;max-width:100%;max-height:380px;object-fit:cover;object-position:center;border-radius:8px;";
@@ -145,7 +147,7 @@ function cleanupEditorHtml(html: string) {
 
 /** Prepare HTML for block editors: unwrap images from empty wrappers, drop blank paragraphs. */
 export function prepareEditorHtml(html: string) {
-  return cleanupEditorHtml(normalizeBodyImageStyles(html));
+  return cleanupEditorHtml(normalizeBodyImageStyles(ensureTypographyRhythm(html || "")));
 }
 
 /** Prepare template HTML: keep full images, no crop/tile styles. */

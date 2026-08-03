@@ -10,7 +10,6 @@ const createSchema = z.object({
   brandId: z.string().min(1),
   keyword: z.string().trim().min(1).max(120).optional(),
   productHighlights: z.string().trim().min(1).max(2000).optional().nullable(),
-  /** Ignored — brand learned tone is always used. */
   captionTone: z.string().trim().min(1).max(200).optional().nullable(),
 });
 
@@ -45,7 +44,7 @@ export async function POST(request: Request) {
       brandId: brand.id,
       keyword: parsed.data.keyword,
       productHighlights: parsed.data.productHighlights?.trim() || null,
-      captionTone: BRAND_CAPTION_TONE,
+      captionTone: parsed.data.captionTone?.trim() || BRAND_CAPTION_TONE,
       status: "collecting",
     },
   });

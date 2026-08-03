@@ -4,14 +4,18 @@ import { z } from "zod";
 import { getOwnedPost, jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
 import { toEditorHtml } from "@/lib/content";
 import { imagesToSlots } from "@/lib/image-slots";
+import { resolveCaptionTone } from "@/lib/caption-tones";
 import { generateBlogDraft } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
 import { ensurePostProductFacts } from "@/lib/post-product";
 import { findSimilarSources } from "@/lib/similar-sources";
+import { normalizeTraitsJson } from "@/lib/style-traits";
+import { Prisma } from "@prisma/client";
 
 const generateSchema = z.object({
   keyword: z.string().trim().min(1).max(120).optional(),
   productHighlights: z.string().trim().max(2000).optional().nullable(),
+  captionTone: z.string().trim().min(1).max(200).optional().nullable(),
 });
 
 type Params = { params: Promise<{ id: string }> };
@@ -41,11 +45,22 @@ export async function POST(request: Request, { params }: Params) {
     parsed.data.productHighlights !== undefined
       ? parsed.data.productHighlights?.trim() || null
       : post.productHighlights;
+  const captionTone =
+    parsed.data.captionTone !== undefined
+      ? parsed.data.captionTone?.trim() || null
+      : post.captionTone;
 
-  if (keyword !== post.keyword || productHighlights !== post.productHighlights) {
+  const factsDirty =
+    keyword !== post.keyword || productHighlights !== post.productHighlights;
+  if (factsDirty || captionTone !== post.captionTone) {
     await prisma.post.update({
       where: { id },
-      data: { keyword, productHighlights, productFactsJson: null },
+      data: {
+        keyword,
+        productHighlights,
+        captionTone,
+        ...(factsDirty ? { productFactsJson: Prisma.DbNull } : {}),
+      },
     });
   }
 
@@ -55,6 +70,8 @@ export async function POST(request: Request, { params }: Params) {
   if (!styleProfile) {
     return jsonError("스타일 프로필이 없습니다. 먼저 문체를 학습하세요.", 400);
   }
+  const brandTone = normalizeTraitsJson(styleProfile.traitsJson).tone;
+  const voiceTone = resolveCaptionTone(captionTone, brandTone);
 
   const sampleAnchors = Array.isArray(styleProfile.sampleAnchors)
     ? (styleProfile.sampleAnchors as Array<{ excerpt?: string }>).filter(
@@ -95,7 +112,7 @@ export async function POST(request: Request, { params }: Params) {
         : post.productFactsJson,
   });
 
-  const captionBlob = images
+  const sceneKeywordBlob = images
     .map((img) => img.caption?.trim())
     .filter(Boolean)
     .join("\n");
@@ -112,7 +129,7 @@ export async function POST(request: Request, { params }: Params) {
     },
   });
   const similarSources = findSimilarSources(
-    `${keyword}\n${productFacts.productName}\n${productFacts.highlights.join(" ")}\n${captionBlob}`,
+    `${keyword}\n${productFacts.productName}\n${productFacts.highlights.join(" ")}\n${sceneKeywordBlob}`,
     sourceCorpus,
     3,
   ).map((s) => ({ title: s.title, excerpt: s.excerpt }));
@@ -129,6 +146,7 @@ export async function POST(request: Request, { params }: Params) {
       imageSlots,
       similarSources,
       productFacts,
+      voiceTone,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "초안 생성에 실패했습니다.";
@@ -142,6 +160,7 @@ export async function POST(request: Request, { params }: Params) {
     data: {
       keyword,
       productHighlights,
+      captionTone,
       title: draft.title,
       titleCandidates: draft.titleCandidates,
       body: bodyHtml,

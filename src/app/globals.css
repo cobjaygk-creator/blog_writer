@@ -19,7 +19,8 @@ body {
 }
 
 .rich-doc {
-  font-size: 0.875rem;
+  /* Body rhythm: 15px (LLM / paste may still set 18px / 22px on spans) */
+  font-size: 15px;
   line-height: 1.75;
   color: #27272a;
 }
@@ -30,14 +31,14 @@ body {
 
 .rich-doc h2 {
   margin: 1.25em 0 0.5em;
-  font-size: 1.25rem;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1.35;
 }
 
 .rich-doc h3 {
   margin: 1.1em 0 0.4em;
-  font-size: 1.05rem;
+  font-size: 18px;
   font-weight: 600;
   line-height: 1.4;
 }
@@ -193,6 +194,22 @@ body {
 .rich-doc h3[style],
 .rich-doc span[style*="font-size"] {
   line-height: 1.45;
+}
+
+/* TipTap keeps font-size on spans — make those sizes unmistakable in the editor */
+.rich-doc span[style*="font-size:15px"],
+.rich-doc span[style*="font-size: 15px"] {
+  font-size: 15px !important;
+}
+
+.rich-doc span[style*="font-size:18px"],
+.rich-doc span[style*="font-size: 18px"] {
+  font-size: 18px !important;
+}
+
+.rich-doc span[style*="font-size:22px"],
+.rich-doc span[style*="font-size: 22px"] {
+  font-size: 22px !important;
 }
 
 .rich-doc .is-editor-empty:first-child::before {

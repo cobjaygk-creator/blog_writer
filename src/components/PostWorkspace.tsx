@@ -15,7 +15,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { copyHtmlForBlogEditor } from "@/lib/clipboard";
 import { ensureImagesInHtml, htmlToPlainText, toEditorHtml } from "@/lib/content";
-import { attachToSlotLayout } from "@/lib/image-slots";
+import {
+  BRAND_CAPTION_TONE,
+  captionToneOptions,
+} from "@/lib/caption-tones";
+import { attachToSlotLayout, imagesToSlots } from "@/lib/image-slots";
 import { buildNewCutDeepLink } from "@/lib/newcut";
 import { applyTemplateToBody, type TemplateKind } from "@/lib/templates";
 
@@ -57,6 +61,7 @@ function imageInputs(images: PostImage[]) {
 export function PostWorkspace({
   initialPost,
   templates = [],
+  brandTone = null,
 }: {
   initialPost: PostData;
   templates?: BrandTemplateOption[];
@@ -65,6 +70,9 @@ export function PostWorkspace({
   const router = useRouter();
   const [post, setPost] = useState(initialPost);
   const [keyword, setKeyword] = useState(initialPost.keyword || "");
+  const [captionTone, setCaptionTone] = useState(
+    initialPost.captionTone || BRAND_CAPTION_TONE,
+  );
   const [productHighlights, setProductHighlights] = useState(
     initialPost.productHighlights || "",
   );
@@ -98,6 +106,15 @@ export function PostWorkspace({
       ? post.titleCandidates.filter((t): t is string => typeof t === "string")
       : [];
   }, [post.titleCandidates]);
+
+  const emptySceneKeywordCount = useMemo(() => {
+    return imagesToSlots(post.images).filter((slot) => {
+      const primary = slot.kind === "single" ? slot.image : slot.images[0];
+      return !primary?.caption?.trim();
+    }).length;
+  }, [post.images]);
+
+  const toneOptions = useMemo(() => captionToneOptions(brandTone), [brandTone]);
 
   const statusLabel =
     post.status === "published"
@@ -233,7 +250,7 @@ export function PostWorkspace({
     const data = (await res.json().catch(() => ({}))) as { error?: string; image?: PostImage };
     setBusy(null);
     if (!res.ok || !data.image) {
-      setError(data.error || "캡션 생성 실패");
+      setError(data.error || "장면 키워드 추천 실패");
       return;
     }
     setPost((prev) => ({
@@ -252,7 +269,7 @@ export function PostWorkspace({
     const data = (await res.json().catch(() => ({}))) as { error?: string; image?: PostImage };
     setBusy(null);
     if (!res.ok || !data.image) {
-      setError(data.error || "캡션 저장 실패");
+      setError(data.error || "장면 키워드 저장 실패");
       return;
     }
     setPost((prev) => ({
@@ -300,6 +317,7 @@ export function PostWorkspace({
       body: JSON.stringify({
         keyword: keyword || undefined,
         productHighlights: productHighlights.trim() || null,
+        captionTone: captionTone || BRAND_CAPTION_TONE,
       }),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
@@ -311,6 +329,9 @@ export function PostWorkspace({
     setPost(data.post);
     setTitle(data.post.title || "");
     setKeyword(data.post.keyword || "");
+    if (data.post.captionTone !== undefined) {
+      setCaptionTone(data.post.captionTone || BRAND_CAPTION_TONE);
+    }
     if (data.post.productHighlights !== undefined) {
       setProductHighlights(data.post.productHighlights || "");
     }
@@ -543,9 +564,12 @@ export function PostWorkspace({
 
       <Card>
         <CardHeader>
-          <CardTitle>사진 & 캡션</CardTitle>
+          <CardTitle>사진 & 장면 키워드</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-sm text-zinc-600">
+            키워드는 사실만 적고, 문장·이모지·서식은 초안 생성에서 문체에 맞게 만듭니다.
+          </p>
           <Label>
             <span>키워드</span>
             <Input
@@ -554,6 +578,23 @@ export function PostWorkspace({
               placeholder="초안 생성에 사용할 키워드"
               maxLength={120}
             />
+          </Label>
+          <Label>
+            <span>문장체 (말투)</span>
+            <select
+              className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              value={captionTone || BRAND_CAPTION_TONE}
+              onChange={(e) => setCaptionTone(e.target.value)}
+            >
+              {toneOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs font-normal text-zinc-500">
+              초안 생성 시 이 말투로 문장을 씁니다. 이모지·강조·색·글자 크기는 학습 스타일을 더 적극 반영합니다.
+            </span>
           </Label>
           <Label>
             <span>제품 특장점 (선택)</span>
@@ -580,7 +621,12 @@ export function PostWorkspace({
             onAddFilesToSlot={(slotId, files, options) => addFilesToSlot(slotId, files, options)}
           />
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {emptySceneKeywordCount > 0 ? (
+              <Badge className="border-amber-200 bg-amber-50 text-amber-800">
+                장면 키워드 비어 있음 {emptySceneKeywordCount}단락
+              </Badge>
+            ) : null}
             <Button type="button" onClick={generateDraft} disabled={busy === "generate" || !keyword.trim()}>
               {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
             </Button>

@@ -557,7 +557,7 @@ function ParagraphRow({
               disabled={busy === `cap-${primary.id}`}
               onClick={() => onRecaption(primary.id)}
             >
-              캡션 재생성
+              키워드 다시 추천
             </Button>
             {slot.kind === "single" ? (
               <Button
@@ -575,11 +575,11 @@ function ParagraphRow({
             rows={3}
             defaultValue={caption}
             key={captionKey}
-            placeholder="이 단락 캡션 (사진 전체 공통)"
+            placeholder="예: 장착 전 · 꼼꼼한 포장 / 구성품 · 본품, 볼트와 너트 / 용량 650L · 넉넉한 적재"
             onBlur={(e) => {
               const next = e.target.value.trim();
               if (next === caption) return;
-              // 단락 캡션은 대표 사진에 저장 (묶음도 캡션 1개)
+              // 단락 장면 키워드는 대표 사진에 저장 (묶음도 키워드 1개)
               onSaveCaption(primary.id, next);
             }}
           />

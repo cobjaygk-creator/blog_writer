@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { getOwnedPost, jsonError, requireUserId } from "@/lib/api-helpers";
 import { uploadMaxBytes } from "@/lib/integrations";
 import { assertCanAddImage } from "@/lib/plan-guards";
-import { getPostCaptionTone } from "@/lib/post-caption-tone";
 import { prisma } from "@/lib/prisma";
 import { uploadImageBuffer } from "@/lib/storage";
 import { captionImage } from "@/lib/vision";
@@ -77,7 +76,6 @@ export async function POST(request: Request, { params }: Params) {
   let captionError: string | null = null;
   if (autoCaption) {
     try {
-      const tone = await getPostCaptionTone(post.id, post.brandId, post.captionTone);
       const { ensurePostProductFacts, factHighlightForCaption } = await import(
         "@/lib/post-product"
       );
@@ -86,7 +84,6 @@ export async function POST(request: Request, { params }: Params) {
       const factHighlight = await factHighlightForCaption(sceneHint, facts);
       const result = await captionImage(upload.imageUrl, {
         keyword: post.keyword,
-        tone,
         factHighlight,
       });
       image = await prisma.postImage.update({
@@ -95,7 +92,7 @@ export async function POST(request: Request, { params }: Params) {
       });
       captionMeta = { usedFallback: result.usedFallback, provider: result.provider };
     } catch (e) {
-      captionError = e instanceof Error ? e.message : "캡션 생성에 실패했습니다.";
+      captionError = e instanceof Error ? e.message : "장면 키워드 제안에 실패했습니다.";
     }
   }
 
