@@ -246,6 +246,7 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
 
   const newCutUrl = buildNewCutDeepLink({
     from: "blog_writer",
+    source: "blog",
     brandId: post.brandId,
     postId: post.id,
   });
@@ -277,7 +278,7 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
           </Badge>
           <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
             <Button type="button" variant="outline" size="sm">
-              New Cut으로
+              New Cut 쇼츠 만들기
             </Button>
           </a>
         </div>

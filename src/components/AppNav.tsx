@@ -31,8 +31,9 @@ export function AppNav({
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-zinc-900"
+              title="New Cut 스튜디오에서 쇼츠 만들기"
             >
-              New Cut
+              New Cut 쇼츠
             </a>
           </nav>
         </div>

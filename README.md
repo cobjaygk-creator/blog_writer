@@ -19,7 +19,7 @@ New Cut은 메뉴/딥링크로만 연결합니다 (`NEXT_PUBLIC_NEW_CUT_URL`).
 2. 업체 CRUD · 원문(SourcePost) · 스타일 학습(StyleProfile)
 3. 포스트 생성 · 사진 업로드(S3 또는 로컬 `public/uploads`) · 비전 캡션 · 순서 변경
 4. StyleProfile + 키워드 + 캡션으로 초안 생성 · 마크다운 편집
-5. New Cut 딥링크 (`?from=blog_writer&brandId=&postId=`)
+5. New Cut 딥링크 (`?from=blog_writer&source=blog#/studio/create`)
 
 LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있습니다.  
 연동 상태: `GET /api/integrations/status`
@@ -35,6 +35,16 @@ LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있�
 | `UPLOAD_MAX_IMAGES_PER_POST` | 20 | 포스트당 이미지 수 제한 |
 
 실연동 시 `.env`에 `LLM_API_KEY`(및 선택적으로 `VISION_*`, `STORAGE_*`)를 채우면 live 모드로 동작합니다.
+
+### New Cut deep link
+
+| 항목 | 값 |
+|------|-----|
+| Local base | `http://127.0.0.1:5173` (`NEXT_PUBLIC_NEW_CUT_URL`) |
+| Target | `#/studio/create` (블로그 URL 탭) |
+| Query | `from=blog_writer`, `source=blog`, optional `brandId`, `postId`, `url` |
+
+예시: `http://127.0.0.1:5173/?from=blog_writer&source=blog&postId=…#/studio/create`
 
 ### Plan limits
 

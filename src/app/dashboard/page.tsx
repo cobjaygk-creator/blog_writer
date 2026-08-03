@@ -71,7 +71,7 @@ export default async function DashboardPage() {
           <div className="flex flex-wrap gap-2">
             <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
               <Button type="button" variant="outline" size="sm">
-                New Cut
+                New Cut 쇼츠
               </Button>
             </a>
             <form

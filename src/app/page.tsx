@@ -38,7 +38,7 @@ export default async function HomePage() {
           </>
         )}
         <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
-          <Button variant="ghost">New Cut 열기</Button>
+          <Button variant="ghost">New Cut 쇼츠 만들기</Button>
         </a>
       </div>
       <ol className="mt-12 max-w-xl space-y-2 text-sm leading-6 text-zinc-600">
