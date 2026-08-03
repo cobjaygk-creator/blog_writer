@@ -2,12 +2,18 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getOwnedBrand, jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
+import { fetchSourceFromUrl } from "@/lib/fetch-source";
 import { assertCanAddSourcePost } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
 
-const createSchema = z.object({
-  rawText: z.string().trim().min(20).max(20000),
-});
+const createSchema = z
+  .object({
+    rawText: z.string().trim().max(20000).optional(),
+    url: z.string().trim().url().optional(),
+  })
+  .refine((v) => Boolean(v.rawText?.trim() || v.url?.trim()), {
+    message: "rawText 또는 url이 필요합니다.",
+  });
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -40,18 +46,46 @@ export async function POST(request: Request, { params }: Params) {
 
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
-    return jsonError("원문은 20자 이상 20,000자 이하여야 합니다.", 400);
+    return jsonError("원문 텍스트(20자+) 또는 블로그 URL이 필요합니다.", 400);
   }
 
   const limitError = await assertCanAddSourcePost(userId!, id);
   if (limitError) return limitError;
 
+  let rawText = parsed.data.rawText?.trim() || "";
+  let sourceUrl: string | null = null;
+  let fetchedTitle: string | null = null;
+
+  if (parsed.data.url?.trim()) {
+    try {
+      const fetched = await fetchSourceFromUrl(parsed.data.url.trim());
+      sourceUrl = fetched.sourceUrl;
+      fetchedTitle = fetched.title;
+      // URL 우선. 텍스트를 같이 보내면 URL 본문 뒤에 보완 텍스트로 붙이지 않고 URL 본문만 사용.
+      rawText = fetched.text;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "URL에서 원문을 가져오지 못했습니다.";
+      return jsonError(message, 502);
+    }
+  }
+
+  if (rawText.length < 20) {
+    return jsonError("원문은 20자 이상이어야 합니다.", 400);
+  }
+
   const sourcePost = await prisma.sourcePost.create({
     data: {
       brandId: id,
-      rawText: parsed.data.rawText,
+      rawText,
+      sourceUrl,
     },
   });
 
-  return NextResponse.json({ sourcePost }, { status: 201 });
+  return NextResponse.json(
+    {
+      sourcePost,
+      meta: fetchedTitle ? { title: fetchedTitle } : undefined,
+    },
+    { status: 201 },
+  );
 }

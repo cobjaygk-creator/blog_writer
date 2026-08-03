@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { buildNewCutDeepLink } from "@/lib/newcut";
 
-type SourcePost = { id: string; rawText: string; createdAt: string };
+type SourcePost = { id: string; rawText: string; sourceUrl?: string | null; createdAt: string };
 type StyleProfile = {
   id: string;
   summaryText: string;
@@ -47,7 +47,9 @@ export function BrandWorkspace({
   const [sources, setSources] = useState(initialSources);
   const [style, setStyle] = useState(initialStyle);
   const [posts] = useState(initialPosts);
+  const [sourceMode, setSourceMode] = useState<"text" | "url">("url");
   const [rawText, setRawText] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [keyword, setKeyword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -74,14 +76,19 @@ export function BrandWorkspace({
     event.preventDefault();
     setBusy("source");
     setError(null);
+    const payload =
+      sourceMode === "url"
+        ? { url: sourceUrl.trim() }
+        : { rawText: rawText.trim() };
     const res = await fetch(`/api/brands/${brandId}/source-posts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rawText }),
+      body: JSON.stringify(payload),
     });
     const data = (await res.json().catch(() => ({}))) as {
       error?: string;
       sourcePost?: SourcePost;
+      meta?: { title?: string };
     };
     setBusy(null);
     if (!res.ok || !data.sourcePost) {
@@ -90,6 +97,7 @@ export function BrandWorkspace({
     }
     setSources((prev) => [data.sourcePost!, ...prev]);
     setRawText("");
+    setSourceUrl("");
     router.refresh();
   }
 
@@ -192,22 +200,60 @@ export function BrandWorkspace({
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>원문 등록</CardTitle>
+          <div className="flex rounded-lg border border-zinc-200 p-0.5 text-xs">
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 ${sourceMode === "url" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+              onClick={() => setSourceMode("url")}
+            >
+              URL
+            </button>
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 ${sourceMode === "text" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+              onClick={() => setSourceMode("text")}
+            >
+              붙여넣기
+            </button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <form onSubmit={addSource} className="space-y-3">
-            <Label>
-              <span>기존 블로그 글 (문체 학습용)</span>
-              <Textarea
-                rows={8}
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                placeholder="업체 톤이 잘 드러나는 글을 붙여넣으세요 (20자 이상)"
-              />
-            </Label>
-            <Button type="submit" disabled={busy === "source" || rawText.trim().length < 20}>
-              {busy === "source" ? "등록 중…" : "원문 추가"}
+            {sourceMode === "url" ? (
+              <Label>
+                <span>블로그 URL</span>
+                <Input
+                  type="url"
+                  required
+                  value={sourceUrl}
+                  onChange={(e) => setSourceUrl(e.target.value)}
+                  placeholder="https://blog.naver.com/... 또는 일반 블로그 URL"
+                />
+                <span className="block text-xs font-normal text-zinc-500">
+                  네이버 블로그·일반 웹 글을 가져와 문체 학습용 원문으로 저장합니다.
+                </span>
+              </Label>
+            ) : (
+              <Label>
+                <span>기존 블로그 글 (문체 학습용)</span>
+                <Textarea
+                  rows={8}
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                  placeholder="업체 톤이 잘 드러나는 글을 붙여넣으세요 (20자 이상)"
+                />
+              </Label>
+            )}
+            <Button
+              type="submit"
+              disabled={
+                busy === "source" ||
+                (sourceMode === "url" ? !sourceUrl.trim() : rawText.trim().length < 20)
+              }
+            >
+              {busy === "source" ? (sourceMode === "url" ? "가져오는 중…" : "등록 중…") : "원문 추가"}
             </Button>
           </form>
 
@@ -217,6 +263,16 @@ export function BrandWorkspace({
             <ul className="space-y-3">
               {sources.map((source) => (
                 <li key={source.id} className="rounded-lg border border-zinc-200 p-3">
+                  {source.sourceUrl ? (
+                    <a
+                      href={source.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mb-2 block truncate text-xs text-zinc-500 hover:underline"
+                    >
+                      {source.sourceUrl}
+                    </a>
+                  ) : null}
                   <p className="whitespace-pre-wrap text-sm text-zinc-700 line-clamp-4">{source.rawText}</p>
                   <div className="mt-2 flex justify-end">
                     <Button

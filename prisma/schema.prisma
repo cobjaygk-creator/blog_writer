@@ -48,6 +48,8 @@ model SourcePost {
   id        String   @id @default(cuid())
   brandId   String
   rawText   String
+  /// Optional origin URL when the source was imported from the web
+  sourceUrl String?
   createdAt DateTime @default(now())
   brand     Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
 

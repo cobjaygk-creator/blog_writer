@@ -44,6 +44,7 @@ export default async function BrandDetailPage({ params }: Props) {
             initialSources={brand.sourcePosts.map((s) => ({
               id: s.id,
               rawText: s.rawText,
+              sourceUrl: s.sourceUrl,
               createdAt: s.createdAt.toISOString(),
             }))}
             initialStyle={
