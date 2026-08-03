@@ -54,5 +54,8 @@ export async function POST(_request: Request, { params }: Params) {
         },
       });
 
-  return NextResponse.json({ styleProfile });
+  return NextResponse.json({
+    styleProfile,
+    meta: learned.meta,
+  });
 }

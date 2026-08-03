@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "test:e2e": "node scripts/e2e-smoke.mjs",
+    "test:e2e:live": "node scripts/e2e-smoke.mjs"
     "postinstall": "prisma generate"
   },
   "dependencies": {

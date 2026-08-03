@@ -1,3 +1,5 @@
+import { deflateSync } from "zlib";
+
 const BASE = process.env.E2E_BASE_URL || "http://localhost:3000";
 const email = `e2e_${Date.now()}@example.com`;
 const password = "password123";
@@ -102,10 +104,31 @@ async function main() {
   }));
   assert(res.status === 201 && data?.sourcePost?.id, `source failed: ${JSON.stringify(data)}`);
 
+  step = "integrations-status";
+  ({ res, data } = await request("/api/integrations/status"));
+  assert(res.ok && data?.integrations, `status failed: ${JSON.stringify(data)}`);
+  const requireLive =
+    process.env.E2E_REQUIRE_LIVE === "1" || process.env.npm_lifecycle_event === "test:e2e:live";
+  console.log(
+    "integrations",
+    JSON.stringify({
+      allowFallback: data.integrations.allowFallback,
+      llm: data.integrations.llm.configured,
+      vision: data.integrations.vision.configured,
+      storage: data.integrations.storage.mode,
+    }),
+  );
+  if (requireLive) {
+    assert(data.integrations.llm.configured, "E2E_REQUIRE_LIVE but LLM not configured");
+  }
+
   step = "style-learn";
   ({ res, data } = await request(`/api/brands/${brandId}/style/learn`, { method: "POST" }));
   assert(res.ok && data?.styleProfile?.summaryText, `learn failed: ${JSON.stringify(data)}`);
-  console.log("style version", data.styleProfile.version);
+  console.log("style version", data.styleProfile.version, "meta", data.meta);
+  if (requireLive) {
+    assert(data.meta?.provider === "llm" && data.meta?.usedFallback === false, `learn not live: ${JSON.stringify(data.meta)}`);
+  }
 
   step = "create-post";
   ({ res, data } = await request("/api/posts", {
@@ -116,11 +139,8 @@ async function main() {
   const postId = data.post.id;
 
   step = "upload-image";
-  // 1x1 PNG
-  const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5WlL8AAAAASUVORK5CYII=",
-    "base64",
-  );
+  // 64x64 solid PNG (1x1 is rejected by Vision APIs)
+  const png = createSolidPng(64, 64, [30, 144, 255]);
   const blob = new Blob([png], { type: "image/png" });
   const fd = new FormData();
   fd.append("file", blob, "dot.png");
@@ -130,7 +150,10 @@ async function main() {
     body: fd,
   }));
   assert(res.status === 201 && data?.image?.id, `upload failed: ${JSON.stringify(data)}`);
-  console.log("caption", data.image.caption);
+  console.log("caption", data.image.caption, "meta", data.meta);
+  if (requireLive) {
+    assert(data.meta?.caption?.provider === "vision" && data.meta?.caption?.usedFallback === false, `caption not live: ${JSON.stringify(data.meta?.caption)}`);
+  }
 
   step = "generate";
   ({ res, data } = await request(`/api/posts/${postId}/generate`, {
@@ -139,7 +162,10 @@ async function main() {
   }));
   assert(res.ok && data?.post?.status === "draft" && data.post.body, `generate failed: ${JSON.stringify(data)}`);
   console.log("title", data.post.title);
-  console.log("bodyChars", data.post.body.length);
+  console.log("bodyChars", data.post.body.length, "meta", data.meta);
+  if (requireLive) {
+    assert(data.meta?.provider === "llm" && data.meta?.usedFallback === false, `generate not live: ${JSON.stringify(data.meta)}`);
+  }
 
   step = "get-post";
   ({ res, data } = await request(`/api/posts/${postId}`));
@@ -154,6 +180,56 @@ async function main() {
   assert(res.ok && data?.images?.length === 1, `reorder failed: ${JSON.stringify(data)}`);
 
   console.log("E2E_OK", { email, brandId, postId, imageId });
+}
+
+function createSolidPng(width, height, rgb) {
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const row = y * (width * 4 + 1);
+    raw[row] = 0;
+    for (let x = 0; x < width; x++) {
+      const i = row + 1 + x * 4;
+      raw[i] = rgb[0];
+      raw[i + 1] = rgb[1];
+      raw[i + 2] = rgb[2];
+      raw[i + 3] = 255;
+    }
+  }
+  const compressed = deflateSync(raw);
+
+  function crc32(buf) {
+    let c = ~0;
+    for (let i = 0; i < buf.length; i++) {
+      c ^= buf[i];
+      for (let k = 0; k < 8; k++) c = c & 1 ? (0xedb88320 ^ (c >>> 1)) : c >>> 1;
+    }
+    return ~c >>> 0;
+  }
+  function chunk(type, data) {
+    const typeBuf = Buffer.from(type, "ascii");
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length, 0);
+    const crcBuf = Buffer.alloc(4);
+    const body = Buffer.concat([typeBuf, data]);
+    crcBuf.writeUInt32BE(crc32(body), 0);
+    return Buffer.concat([len, body, crcBuf]);
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", compressed),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 main().catch((err) => {

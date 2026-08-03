@@ -79,5 +79,8 @@ export async function POST(request: Request, { params }: Params) {
     },
   });
 
-  return NextResponse.json({ post: updated });
+  return NextResponse.json({
+    post: updated,
+    meta: draft.meta,
+  });
 }

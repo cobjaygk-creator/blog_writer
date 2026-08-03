@@ -1,3 +1,11 @@
+import {
+  allowFallback,
+  fetchWithTimeout,
+  isLlmConfigured,
+  llmMaxTokens,
+  llmTimeoutMs,
+} from "@/lib/integrations";
+
 type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -18,27 +26,35 @@ function getLlmConfig() {
 
 export async function chatCompletion(
   messages: ChatMessage[],
-  options?: { temperature?: number; json?: boolean },
+  options?: { temperature?: number; json?: boolean; maxTokens?: number },
 ): Promise<ChatResult> {
   const { apiKey, baseUrl, model } = getLlmConfig();
 
   if (!apiKey) {
+    if (!allowFallback()) {
+      throw new Error("LLM_API_KEY가 설정되지 않았습니다.");
+    }
     return { text: "", usedFallback: true };
   }
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const response = await fetchWithTimeout(
+    `${baseUrl}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: options?.temperature ?? 0.4,
+        max_tokens: options?.maxTokens ?? llmMaxTokens(),
+        response_format: options?.json ? { type: "json_object" } : undefined,
+        messages,
+      }),
     },
-    body: JSON.stringify({
-      model,
-      temperature: options?.temperature ?? 0.4,
-      response_format: options?.json ? { type: "json_object" } : undefined,
-      messages,
-    }),
-  });
+    llmTimeoutMs(),
+  );
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
@@ -55,6 +71,30 @@ export async function chatCompletion(
   return { text, usedFallback: false };
 }
 
+async function withProviderFallback<T>(
+  live: () => Promise<T>,
+  fallback: () => T,
+  label: string,
+): Promise<{ result: T; usedFallback: boolean; provider: "llm" | "fallback" }> {
+  if (!isLlmConfigured()) {
+    if (!allowFallback()) {
+      throw new Error("LLM_API_KEY가 설정되지 않았습니다.");
+    }
+    return { result: fallback(), usedFallback: true, provider: "fallback" };
+  }
+
+  try {
+    const result = await live();
+    return { result, usedFallback: false, provider: "llm" };
+  } catch (error) {
+    if (!allowFallback()) {
+      throw error;
+    }
+    console.warn(`[${label}] provider failed, using fallback:`, error);
+    return { result: fallback(), usedFallback: true, provider: "fallback" };
+  }
+}
+
 export type StyleLearnResult = {
   summaryText: string;
   sampleAnchors: Array<{ excerpt: string; sourcePostId: string }>;
@@ -63,6 +103,10 @@ export type StyleLearnResult = {
     sentenceLength: string;
     commonPhrases: string[];
     structureNotes: string;
+  };
+  meta: {
+    usedFallback: boolean;
+    provider: "llm" | "fallback";
   };
 };
 
@@ -73,37 +117,39 @@ export async function learnStyleFromSources(
     .map((s, i) => `[원문 ${i + 1} id=${s.id}]\n${s.rawText.slice(0, 4000)}`)
     .join("\n\n");
 
-  const { text, usedFallback } = await chatCompletion(
-    [
-      {
-        role: "system",
-        content:
-          "당신은 한국어 블로그 문체 분석가입니다. 반드시 JSON만 반환하세요. 키: summaryText(string), sampleAnchors(array of {excerpt, sourcePostId}), traitsJson({tone, sentenceLength, commonPhrases:string[], structureNotes}).",
-      },
-      {
-        role: "user",
-        content: `다음 원문들을 분석해 재사용 가능한 문체 프로필을 만드세요.\n\n${joined}`,
-      },
-    ],
-    { json: true, temperature: 0.3 },
+  const { result, usedFallback, provider } = await withProviderFallback(
+    async () => {
+      const { text } = await chatCompletion(
+        [
+          {
+            role: "system",
+            content:
+              "당신은 한국어 블로그 문체 분석가입니다. 반드시 JSON만 반환하세요. 키: summaryText(string), sampleAnchors(array of {excerpt, sourcePostId}), traitsJson({tone, sentenceLength, commonPhrases:string[], structureNotes}).",
+          },
+          {
+            role: "user",
+            content: `다음 원문들을 분석해 재사용 가능한 문체 프로필을 만드세요.\n\n${joined}`,
+          },
+        ],
+        { json: true, temperature: 0.3, maxTokens: Math.min(llmMaxTokens(), 1800) },
+      );
+      try {
+        return normalizeStyleLearn(JSON.parse(text) as Partial<StyleLearnResult>, sources);
+      } catch {
+        throw new Error("LLM 스타일 JSON 파싱에 실패했습니다.");
+      }
+    },
+    () => normalizeStyleLearn({}, sources),
+    "style-learn",
   );
 
-  if (usedFallback) {
-    return fallbackStyleLearn(sources);
-  }
-
-  try {
-    const parsed = JSON.parse(text) as Partial<StyleLearnResult>;
-    return normalizeStyleLearn(parsed, sources);
-  } catch {
-    return fallbackStyleLearn(sources);
-  }
+  return { ...result, meta: { usedFallback, provider } };
 }
 
 function normalizeStyleLearn(
   parsed: Partial<StyleLearnResult>,
   sources: Array<{ id: string; rawText: string }>,
-): StyleLearnResult {
+): Omit<StyleLearnResult, "meta"> {
   const fallback = fallbackStyleLearn(sources);
   return {
     summaryText:
@@ -129,7 +175,7 @@ function normalizeStyleLearn(
   };
 }
 
-function fallbackStyleLearn(sources: Array<{ id: string; rawText: string }>): StyleLearnResult {
+function fallbackStyleLearn(sources: Array<{ id: string; rawText: string }>): Omit<StyleLearnResult, "meta"> {
   const texts = sources.map((s) => s.rawText.trim()).filter(Boolean);
   const avgLen =
     texts.reduce((sum, t) => sum + t.split(/[.!?。！？\n]/).filter(Boolean).length, 0) /
@@ -152,7 +198,7 @@ function fallbackStyleLearn(sources: Array<{ id: string; rawText: string }>): St
   return {
     summaryText: `총 ${sources.length}편의 원문을 바탕으로 한 로컬 문체 요약입니다. 문장은 ${
       avgLen > 8 ? "비교적 길고 설명형" : "짧고 직설적"
-    }이며, 친근한 안내 톤을 유지합니다. (LLM_API_KEY 미설정 시 휴리스틱)`,
+    }이며, 친근한 안내 톤을 유지합니다. (로컬 폴백)`,
     sampleAnchors,
     traitsJson: {
       tone: "친근하고 실용적인 안내 톤",
@@ -167,6 +213,10 @@ export type DraftGenerateResult = {
   title: string;
   titleCandidates: string[];
   body: string;
+  meta: {
+    usedFallback: boolean;
+    provider: "llm" | "fallback";
+  };
 };
 
 export async function generateBlogDraft(input: {
@@ -182,16 +232,18 @@ export async function generateBlogDraft(input: {
     .join("\n");
   const captions = input.captions.map((c, i) => `${i + 1}. ${c}`).join("\n");
 
-  const { text, usedFallback } = await chatCompletion(
-    [
-      {
-        role: "system",
-        content:
-          "당신은 한국어 블로그 작가입니다. JSON만 반환하세요. 키: title(string), titleCandidates(string[] 3개), body(string, 마크다운).",
-      },
-      {
-        role: "user",
-        content: `업체: ${input.brandName}
+  const { result, usedFallback, provider } = await withProviderFallback(
+    async () => {
+      const { text } = await chatCompletion(
+        [
+          {
+            role: "system",
+            content:
+              "당신은 한국어 블로그 작가입니다. JSON만 반환하세요. 키: title(string), titleCandidates(string[] 3개), body(string, 마크다운).",
+          },
+          {
+            role: "user",
+            content: `업체: ${input.brandName}
 키워드: ${input.keyword}
 문체 요약: ${input.styleSummary}
 문체 특성: ${JSON.stringify(input.traitsJson)}
@@ -201,32 +253,37 @@ ${anchors || "(없음)"}
 ${captions || "(없음)"}
 
 요청: 위 문체를 모방해 블로그 초안을 작성하세요. 사진은 캡션 순서에 맞춰 문단과 연결하세요.`,
-      },
-    ],
-    { json: true, temperature: 0.6 },
+          },
+        ],
+        { json: true, temperature: 0.6, maxTokens: llmMaxTokens() },
+      );
+      try {
+        const parsed = JSON.parse(text) as Partial<DraftGenerateResult>;
+        const title =
+          typeof parsed.title === "string" && parsed.title.trim()
+            ? parsed.title.trim()
+            : `${input.keyword} 가이드`;
+        const titleCandidates = Array.isArray(parsed.titleCandidates)
+          ? parsed.titleCandidates.filter((t): t is string => typeof t === "string").slice(0, 5)
+          : [title];
+        const body =
+          typeof parsed.body === "string" && parsed.body.trim()
+            ? parsed.body.trim()
+            : fallbackDraft(input).body;
+        return {
+          title,
+          titleCandidates: titleCandidates.length ? titleCandidates : [title],
+          body,
+        };
+      } catch {
+        throw new Error("LLM 초안 JSON 파싱에 실패했습니다.");
+      }
+    },
+    () => fallbackDraft(input),
+    "draft-generate",
   );
 
-  if (usedFallback) {
-    return fallbackDraft(input);
-  }
-
-  try {
-    const parsed = JSON.parse(text) as Partial<DraftGenerateResult>;
-    const title =
-      typeof parsed.title === "string" && parsed.title.trim()
-        ? parsed.title.trim()
-        : `${input.keyword} 가이드`;
-    const titleCandidates = Array.isArray(parsed.titleCandidates)
-      ? parsed.titleCandidates.filter((t): t is string => typeof t === "string").slice(0, 5)
-      : [title];
-    const body =
-      typeof parsed.body === "string" && parsed.body.trim()
-        ? parsed.body.trim()
-        : fallbackDraft(input).body;
-    return { title, titleCandidates: titleCandidates.length ? titleCandidates : [title], body };
-  } catch {
-    return fallbackDraft(input);
-  }
+  return { ...result, meta: { usedFallback, provider } };
 }
 
 function fallbackDraft(input: {
@@ -234,7 +291,7 @@ function fallbackDraft(input: {
   keyword: string;
   styleSummary: string;
   captions: string[];
-}): DraftGenerateResult {
+}): Omit<DraftGenerateResult, "meta"> {
   const title = `${input.keyword} — ${input.brandName} 이야기`;
   const captionBlocks =
     input.captions.length > 0
@@ -254,7 +311,7 @@ ${captionBlocks}
 ## 마무리
 
 ${input.brandName}의 톤을 살려 ${input.keyword}를 소개해 보았습니다.
-(LLM_API_KEY 미설정 시 생성된 로컬 초안입니다.)
+(로컬 폴백 초안입니다.)
 `;
 
   return {

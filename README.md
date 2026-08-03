@@ -21,7 +21,20 @@ New Cut은 메뉴/딥링크로만 연결합니다 (`NEXT_PUBLIC_NEW_CUT_URL`).
 4. StyleProfile + 키워드 + 캡션으로 초안 생성 · 마크다운 편집
 5. New Cut 딥링크 (`?from=blog_writer&brandId=&postId=`)
 
-LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있습니다.
+LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있습니다.  
+연동 상태: `GET /api/integrations/status`
+
+### Integrations
+
+| Env | 기본 | 설명 |
+|-----|------|------|
+| `INTEGRATIONS_ALLOW_FALLBACK` | `true` | `false`면 키 누락/API 실패 시 에러 (프로덕션 권장) |
+| `LLM_TIMEOUT_MS` / `VISION_TIMEOUT_MS` / `STORAGE_TIMEOUT_MS` | 45s/45s/30s | 요청 타임아웃 |
+| `LLM_MAX_TOKENS` / `VISION_MAX_TOKENS` | 2500/300 | 응답 토큰 상한 |
+| `UPLOAD_MAX_BYTES` | 8MB | 업로드 크기 제한 |
+| `UPLOAD_MAX_IMAGES_PER_POST` | 20 | 포스트당 이미지 수 제한 |
+
+실연동 시 `.env`에 `LLM_API_KEY`(및 선택적으로 `VISION_*`, `STORAGE_*`)를 채우면 live 모드로 동작합니다.
 
 ## Setup
 

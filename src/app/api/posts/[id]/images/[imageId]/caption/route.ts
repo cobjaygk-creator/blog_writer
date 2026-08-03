@@ -17,9 +17,9 @@ export async function POST(_request: Request, { params }: Params) {
   const image = post.images.find((img) => img.id === imageId);
   if (!image) return jsonError("이미지를 찾을 수 없습니다.", 404);
 
-  let caption: string;
+  let result;
   try {
-    caption = await captionImage(image.imageUrl, post.keyword);
+    result = await captionImage(image.imageUrl, post.keyword);
   } catch (e) {
     const message = e instanceof Error ? e.message : "캡션 생성에 실패했습니다.";
     return jsonError(message, 502);
@@ -27,8 +27,11 @@ export async function POST(_request: Request, { params }: Params) {
 
   const updated = await prisma.postImage.update({
     where: { id: imageId },
-    data: { caption },
+    data: { caption: result.caption },
   });
 
-  return NextResponse.json({ image: updated });
+  return NextResponse.json({
+    image: updated,
+    meta: { usedFallback: result.usedFallback, provider: result.provider },
+  });
 }
