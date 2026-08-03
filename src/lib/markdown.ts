@@ -2,6 +2,7 @@
 export function markdownToPlainText(source: string): string {
   return source
     .replace(/\r\n/g, "\n")
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) => `\n[사진: ${alt || "이미지"}]\n${url}\n`)
     .replace(/```[\s\S]*?```/g, (block) =>
       block
         .replace(/^```[^\n]*\n?/, "")
@@ -32,6 +33,16 @@ export function markdownToPublishHtml(source: string): string {
   };
 
   for (const line of lines) {
+    const imageOnly = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imageOnly) {
+      closeList();
+      const alt = imageOnly[1] || "이미지";
+      const src = imageOnly[2];
+      html.push(
+        `<p><img src="${src}" alt="${alt}" style="max-width:100%;height:auto;" /></p><p>${alt}</p>`,
+      );
+      continue;
+    }
     if (/^###\s+/.test(line)) {
       closeList();
       html.push(`<h3>${inlinePlain(line.replace(/^###\s+/, ""))}</h3>`);
@@ -68,6 +79,10 @@ export function markdownToPublishHtml(source: string): string {
 
 function inlinePlain(text: string) {
   return text
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, src) => {
+      const a = alt || "이미지";
+      return `<img src="${src}" alt="${a}" style="max-width:100%;height:auto;" />`;
+    })
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/`(.+?)`/g, "<code>$1</code>");
@@ -103,6 +118,17 @@ export function markdownToHtml(source: string): string {
     }
     if (inCode) {
       codeBuf.push(line);
+      continue;
+    }
+
+    const imageOnly = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imageOnly) {
+      closeList();
+      const alt = imageOnly[1] || "이미지";
+      const src = imageOnly[2];
+      html.push(
+        `<figure class="mt-4"><img src="${src}" alt="${alt}" class="w-full rounded-lg object-cover" /><figcaption class="mt-2 text-xs text-zinc-500">${alt}</figcaption></figure>`,
+      );
       continue;
     }
 
@@ -146,6 +172,10 @@ export function markdownToHtml(source: string): string {
 
 function inline(text: string) {
   return text
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, src) => {
+      const a = alt || "이미지";
+      return `<img src="${src}" alt="${a}" class="my-2 max-w-full rounded-lg" />`;
+    })
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/`(.+?)`/g, '<code class="rounded bg-zinc-100 px-1 py-0.5 text-[12px]">$1</code>');

@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PublishExport } from "@/components/PublishExport";
 import { markdownToHtml } from "@/lib/markdown";
 import { buildNewCutDeepLink } from "@/lib/newcut";
+import { ensureImagesInMarkdown } from "@/lib/publish-body";
 
 type PostImage = {
   id: string;
@@ -183,7 +184,31 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
     setTitle(data.post.title || "");
     setBody(data.post.body || "");
     setKeyword(data.post.keyword || "");
+    setEditorTab("preview");
     router.refresh();
+  }
+
+  async function syncImagesIntoBody() {
+    const nextBody = ensureImagesInMarkdown(
+      body,
+      post.images.map((img) => ({ imageUrl: img.imageUrl, caption: img.caption })),
+    );
+    setBody(nextBody);
+    setBusy("save");
+    setError(null);
+    const res = await fetch(`/api/posts/${post.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: nextBody, title: title || undefined, status: "draft" }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
+    setBusy(null);
+    if (!res.ok || !data.post) {
+      setError(data.error || "본문에 사진 반영 실패");
+      return;
+    }
+    setPost(data.post);
+    setEditorTab("preview");
   }
 
   async function saveDraft(event: FormEvent) {
@@ -383,9 +408,24 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
             </ul>
           )}
 
-          <Button type="button" onClick={generateDraft} disabled={busy === "generate" || !keyword.trim()}>
-            {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={generateDraft} disabled={busy === "generate" || !keyword.trim()}>
+              {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
+            </Button>
+            {post.images.length > 0 && body.trim() ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy === "save"}
+                onClick={() => void syncImagesIntoBody()}
+              >
+                본문에 사진 넣기
+              </Button>
+            ) : null}
+          </div>
+          <p className="text-xs text-zinc-500">
+            초안 생성 시 사진이 본문 마크다운에 함께 들어갑니다. 미리보기에서 위치를 확인하세요.
+          </p>
         </CardContent>
       </Card>
 
@@ -494,6 +534,7 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
           images={post.images}
           busy={busy === "status"}
           onMarkedPublished={() => setStatus("published")}
+          onSyncImagesIntoBody={() => void syncImagesIntoBody()}
         />
       )}
     </div>

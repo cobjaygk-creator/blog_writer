@@ -45,9 +45,10 @@ export async function POST(request: Request, { params }: Params) {
       )
     : [];
 
-  const captions = post.images
-    .map((img) => img.caption?.trim() || `(캡션 없음: ${img.imageUrl})`)
-    .filter(Boolean);
+  const images = post.images.map((img) => ({
+    imageUrl: img.imageUrl,
+    caption: img.caption,
+  }));
 
   let draft;
   try {
@@ -57,7 +58,7 @@ export async function POST(request: Request, { params }: Params) {
       styleSummary: styleProfile.summaryText,
       traitsJson: styleProfile.traitsJson,
       sampleAnchors,
-      captions,
+      images,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "초안 생성에 실패했습니다.";

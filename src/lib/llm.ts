@@ -5,6 +5,12 @@ import {
   llmMaxTokens,
   llmTimeoutMs,
 } from "@/lib/integrations";
+import {
+  buildImageAwareFallbackBody,
+  ensureImagesInMarkdown,
+  imageMarkdown,
+  type PublishImageInput,
+} from "@/lib/publish-body";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -225,12 +231,17 @@ export async function generateBlogDraft(input: {
   styleSummary: string;
   traitsJson: unknown;
   sampleAnchors: Array<{ excerpt: string }>;
-  captions: string[];
+  images: PublishImageInput[];
 }): Promise<DraftGenerateResult> {
   const anchors = input.sampleAnchors
     .map((a, i) => `${i + 1}. ${a.excerpt}`)
     .join("\n");
-  const captions = input.captions.map((c, i) => `${i + 1}. ${c}`).join("\n");
+  const imageLines =
+    input.images.length > 0
+      ? input.images
+          .map((img, i) => `${i + 1}. ${imageMarkdown(img, i)}  (캡션: ${img.caption || "없음"})`)
+          .join("\n")
+      : "(없음)";
 
   const { result, usedFallback, provider } = await withProviderFallback(
     async () => {
@@ -239,7 +250,7 @@ export async function generateBlogDraft(input: {
           {
             role: "system",
             content:
-              "당신은 한국어 블로그 작가입니다. JSON만 반환하세요. 키: title(string), titleCandidates(string[] 3개), body(string, 마크다운).",
+              "당신은 한국어 블로그 작가입니다. JSON만 반환하세요. 키: title(string), titleCandidates(string[] 3개), body(string, 마크다운). body에는 제공된 이미지 마크다운(![캡션](URL))을 URL 그대로 본문 중간에 삽입하세요. URL을 바꾸거나 생략하지 마세요.",
           },
           {
             role: "user",
@@ -249,10 +260,10 @@ export async function generateBlogDraft(input: {
 문체 특성: ${JSON.stringify(input.traitsJson)}
 문체 샘플:
 ${anchors || "(없음)"}
-사진 캡션(순서대로 본문에 자연스럽게 반영):
-${captions || "(없음)"}
+사진 (아래 마크다운을 본문에 순서대로 삽입):
+${imageLines}
 
-요청: 위 문체를 모방해 블로그 초안을 작성하세요. 사진은 캡션 순서에 맞춰 문단과 연결하세요.`,
+요청: 위 문체를 모방해 블로그 초안을 작성하세요. 각 사진 마크다운은 관련 문단 바로 위/아래에 넣으세요.`,
           },
         ],
         { json: true, temperature: 0.6, maxTokens: llmMaxTokens() },
@@ -266,14 +277,14 @@ ${captions || "(없음)"}
         const titleCandidates = Array.isArray(parsed.titleCandidates)
           ? parsed.titleCandidates.filter((t): t is string => typeof t === "string").slice(0, 5)
           : [title];
-        const body =
+        const rawBody =
           typeof parsed.body === "string" && parsed.body.trim()
             ? parsed.body.trim()
             : fallbackDraft(input).body;
         return {
           title,
           titleCandidates: titleCandidates.length ? titleCandidates : [title],
-          body,
+          body: ensureImagesInMarkdown(rawBody, input.images),
         };
       } catch {
         throw new Error("LLM 초안 JSON 파싱에 실패했습니다.");
@@ -283,36 +294,27 @@ ${captions || "(없음)"}
     "draft-generate",
   );
 
-  return { ...result, meta: { usedFallback, provider } };
+  return {
+    ...result,
+    body: ensureImagesInMarkdown(result.body, input.images),
+    meta: { usedFallback, provider },
+  };
 }
 
 function fallbackDraft(input: {
   brandName: string;
   keyword: string;
   styleSummary: string;
-  captions: string[];
+  images: PublishImageInput[];
 }): Omit<DraftGenerateResult, "meta"> {
   const title = `${input.keyword} — ${input.brandName} 이야기`;
-  const captionBlocks =
-    input.captions.length > 0
-      ? input.captions.map((c, i) => `### 장면 ${i + 1}\n\n${c}\n`).join("\n")
-      : "사진 캡션이 없어 텍스트 중심으로 작성했습니다.\n";
-
-  const body = `# ${title}
-
-${input.styleSummary}
-
-이번 글의 키워드는 **${input.keyword}** 입니다.
-
-## 본문
-
-${captionBlocks}
-
-## 마무리
-
-${input.brandName}의 톤을 살려 ${input.keyword}를 소개해 보았습니다.
-(로컬 폴백 초안입니다.)
-`;
+  const body = buildImageAwareFallbackBody({
+    title,
+    keyword: input.keyword,
+    brandName: input.brandName,
+    styleSummary: input.styleSummary,
+    images: input.images,
+  });
 
   return {
     title,
