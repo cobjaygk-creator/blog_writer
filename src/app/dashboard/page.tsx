@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { AppNav } from "@/components/AppNav";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { auth, signOut } from "@/lib/auth";
+import { buildNewCutDeepLink } from "@/lib/newcut";
 import { prisma } from "@/lib/prisma";
 
 export default async function DashboardPage() {
@@ -10,7 +14,13 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  let brands: { id: string; name: string; createdAt: Date }[] = [];
+  let brands: {
+    id: string;
+    name: string;
+    createdAt: Date;
+    styleProfile: { version: number } | null;
+    _count: { sourcePosts: number; posts: number };
+  }[] = [];
   let posts: { id: string; title: string | null; status: string; createdAt: Date }[] = [];
   let dbError: string | null = null;
 
@@ -18,7 +28,13 @@ export default async function DashboardPage() {
     brands = await prisma.brand.findMany({
       where: { userId: session.user.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true, name: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        styleProfile: { select: { version: true } },
+        _count: { select: { sourcePosts: true, posts: true } },
+      },
     });
     posts = await prisma.post.findMany({
       where: { brand: { userId: session.user.id } },
@@ -30,73 +46,93 @@ export default async function DashboardPage() {
     dbError = "DB에 연결하지 못했습니다. DATABASE_URL과 prisma migrate를 확인해 주세요.";
   }
 
+  const newCutUrl = buildNewCutDeepLink({ from: "blog_writer" });
+
   return (
-    <main className="mx-auto w-full max-w-4xl px-6 py-12">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">대시보드</h1>
-          <p className="mt-1 text-sm text-zinc-600">{session.user.email}</p>
+    <>
+      <AppNav email={session.user.email} />
+      <main className="mx-auto w-full max-w-4xl px-6 py-12">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">대시보드</h1>
+            <p className="mt-1 text-sm text-zinc-600">{session.user.email}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
+              <Button type="button" variant="outline" size="sm">
+                New Cut
+              </Button>
+            </a>
+            <form
+              action={async () => {
+                "use server";
+                await signOut({ redirectTo: "/" });
+              }}
+            >
+              <Button type="submit" variant="outline" size="sm">
+                로그아웃
+              </Button>
+            </form>
+          </div>
         </div>
-        <form
-          action={async () => {
-            "use server";
-            await signOut({ redirectTo: "/" });
-          }}
-        >
-          <button
-            type="submit"
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
-          >
-            로그아웃
-          </button>
-        </form>
-      </div>
 
-      {dbError ? (
-        <p className="mt-8 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {dbError}
-        </p>
-      ) : null}
-
-      <section className="mt-10">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium text-zinc-900">업체</h2>
-          <span className="text-xs text-zinc-500">2단계에서 생성 API 연결 예정</span>
-        </div>
-        {brands.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-sm text-zinc-500">
-            등록된 업체가 없습니다. 다음 단계에서 업체·스타일 학습을 추가합니다.
+        {dbError ? (
+          <p className="mt-8 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {dbError}
           </p>
-        ) : (
-          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-            {brands.map((brand) => (
-              <li key={brand.id} className="rounded-xl border border-zinc-200 px-4 py-3">
-                <Link href={`/brands/${brand.id}`} className="font-medium text-zinc-900 hover:underline">
-                  {brand.name}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        ) : null}
 
-      <section className="mt-10">
-        <h2 className="text-lg font-medium text-zinc-900">최근 포스트</h2>
-        {posts.length === 0 ? (
-          <p className="mt-4 text-sm text-zinc-500">아직 생성된 포스트가 없습니다.</p>
-        ) : (
-          <ul className="mt-4 divide-y divide-zinc-100 rounded-xl border border-zinc-200">
-            {posts.map((post) => (
-              <li key={post.id} className="flex items-center justify-between px-4 py-3 text-sm">
-                <Link href={`/posts/${post.id}`} className="font-medium text-zinc-900 hover:underline">
-                  {post.title || "(제목 없음)"}
-                </Link>
-                <span className="text-zinc-500">{post.status}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </main>
+        <section className="mt-10">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium text-zinc-900">업체</h2>
+            <Link href="/brands/new">
+              <Button size="sm">업체 추가</Button>
+            </Link>
+          </div>
+          {brands.length === 0 ? (
+            <p className="mt-4 rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-sm text-zinc-500">
+              등록된 업체가 없습니다. 업체를 만들고 원문으로 문체를 학습하세요.
+            </p>
+          ) : (
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+              {brands.map((brand) => (
+                <li key={brand.id} className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
+                  <Link href={`/brands/${brand.id}`} className="font-medium text-zinc-900 hover:underline">
+                    {brand.name}
+                  </Link>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-zinc-500">
+                    <span>원문 {brand._count.sourcePosts}</span>
+                    <span>포스트 {brand._count.posts}</span>
+                    {brand.styleProfile ? (
+                      <Badge>스타일 v{brand.styleProfile.version}</Badge>
+                    ) : (
+                      <Badge className="border-amber-200 bg-amber-50 text-amber-800">미학습</Badge>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="mt-10">
+          <h2 className="text-lg font-medium text-zinc-900">최근 포스트</h2>
+          {posts.length === 0 ? (
+            <p className="mt-4 text-sm text-zinc-500">아직 생성된 포스트가 없습니다.</p>
+          ) : (
+            <ul className="mt-4 divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">
+              {posts.map((post) => (
+                <li key={post.id} className="flex items-center justify-between px-4 py-3 text-sm">
+                  <Link href={`/posts/${post.id}`} className="font-medium text-zinc-900 hover:underline">
+                    {post.title || "(제목 없음)"}
+                  </Link>
+                  <Badge>{post.status}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </main>
+    </>
   );
 }

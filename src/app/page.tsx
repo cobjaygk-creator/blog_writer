@@ -1,45 +1,51 @@
 import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
 import { auth } from "@/lib/auth";
+import { buildNewCutDeepLink } from "@/lib/newcut";
 
 export default async function HomePage() {
   const session = await auth();
+  const newCutUrl = buildNewCutDeepLink({ from: "blog_writer" });
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 py-20">
+    <main className="relative mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 py-20">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-[radial-gradient(ellipse_at_top,_rgba(24,24,27,0.08),_transparent_65%)]"
+      />
       <p className="text-sm font-medium tracking-wide text-zinc-500">blog_writer</p>
       <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-900">
         AI 블로그 포스트 생성기
       </h1>
       <p className="mt-4 max-w-xl text-base leading-7 text-zinc-600">
         업체별 기존 글을 학습해 문체 프로필을 만들고, 사진과 키워드로 블로그 초안을 생성합니다.
-        New Cut(쇼츠)과 분리된 서비스이며, 이후 메뉴로 연결할 예정입니다.
+        New Cut(쇼츠)과 분리된 서비스이며, 메뉴에서 바로 연결할 수 있습니다.
       </p>
       <div className="mt-8 flex flex-wrap gap-3">
         {session?.user ? (
-          <Link
-            href="/dashboard"
-            className="rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-800"
-          >
-            대시보드로 이동
+          <Link href="/dashboard">
+            <Button>대시보드로 이동</Button>
           </Link>
         ) : (
           <>
-            <Link
-              href="/register"
-              className="rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-800"
-            >
-              시작하기
+            <Link href="/register">
+              <Button>시작하기</Button>
             </Link>
-            <Link
-              href="/login"
-              className="rounded-lg border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-            >
-              로그인
+            <Link href="/login">
+              <Button variant="outline">로그인</Button>
             </Link>
           </>
         )}
+        <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
+          <Button variant="ghost">New Cut 열기</Button>
+        </a>
       </div>
+      <ol className="mt-12 max-w-xl space-y-2 text-sm leading-6 text-zinc-600">
+        <li>1. 업체 생성 후 기존 글을 원문으로 등록</li>
+        <li>2. 문체 학습으로 StyleProfile 생성</li>
+        <li>3. 사진 업로드·캡션·순서 정리 후 초안 생성</li>
+      </ol>
     </main>
   );
 }

@@ -3,21 +3,25 @@
 AI 블로그 포스트 생성기 (New Cut 쇼츠와 **별도** 서비스).
 
 업체(Brand)별 기존 글 문체를 학습하고, 사진 + 키워드로 블로그 초안을 만듭니다.  
-이후 New Cut 메뉴/딥링크로만 연결할 예정입니다.
+New Cut은 메뉴/딥링크로만 연결합니다 (`NEXT_PUBLIC_NEW_CUT_URL`).
 
 ## Stack
 
 - Next.js (App Router) + TypeScript + Tailwind
 - Prisma + PostgreSQL
 - Auth.js / NextAuth (Credentials)
-- S3 호환 스토리지 · LLM/Vision 키는 환경변수로 주입 (2단계 이후)
+- S3 호환 스토리지 · LLM/Vision (OpenAI-compatible HTTP)
+- UI primitives (Button/Input/Card 등 shadcn 스타일)
 
-## Phase 1 (완료)
+## Features
 
-- Prisma 스키마: User, Brand, SourcePost, StyleProfile, Post, PostImage
-- 회원가입 / 로그인 / 세션
-- 랜딩, 대시보드 골격
-- `.env.example`
+1. 회원가입 / 로그인 / 세션
+2. 업체 CRUD · 원문(SourcePost) · 스타일 학습(StyleProfile)
+3. 포스트 생성 · 사진 업로드(S3 또는 로컬 `public/uploads`) · 비전 캡션 · 순서 변경
+4. StyleProfile + 키워드 + 캡션으로 초안 생성 · 마크다운 편집
+5. New Cut 딥링크 (`?from=blog_writer&brandId=&postId=`)
+
+LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있습니다.
 
 ## Setup
 
@@ -61,8 +65,8 @@ npm.cmd run dev
 ## Roadmap
 
 1. ~~프로젝트 초기화 & DB & 인증~~  
-2. 업체 + 원문 + 스타일 학습 API  
-3. 사진 업로드 / 비전 캡션 / 순서  
-4. 포스트 초안 생성 API  
-5. 화면 고도화 (shadcn, 편집기)  
-6. New Cut 메뉴 연결
+2. ~~업체 + 원문 + 스타일 학습 API~~  
+3. ~~사진 업로드 / 비전 캡션 / 순서~~  
+4. ~~포스트 초안 생성 API~~  
+5. ~~화면 고도화 (UI primitives, 편집기)~~  
+6. ~~New Cut 메뉴 연결~~  

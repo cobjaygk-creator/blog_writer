@@ -24,6 +24,10 @@
 .DS_Store
 *.pem
 
+# local image uploads (S3 fallback)
+/public/uploads/*
+!/public/uploads/.gitkeep
+
 # debug
 npm-debug.log*
 yarn-debug.log*
