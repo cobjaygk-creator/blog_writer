@@ -32,11 +32,11 @@ export default async function BrandDetailPage({ params }: Props) {
     <>
       <AppNav email={session.user.email} />
       <main className="mx-auto w-full max-w-3xl px-6 py-10">
-        <Link href="/dashboard" className="text-sm text-zinc-500 hover:text-zinc-800">
-          ← 대시보드
+        <Link href="/brands" className="text-sm text-zinc-500 hover:text-zinc-800">
+          ← 업체 등록
         </Link>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900">{brand.name}</h1>
-        <p className="mt-2 text-sm text-zinc-600">원문 등록 · 문체 학습 · 포스트 생성</p>
+        <p className="mt-2 text-sm text-zinc-600">네이버 블로그 일괄 가져오기 · 문체 학습</p>
         <div className="mt-8">
           <BrandWorkspace
             brandId={brand.id}
@@ -45,6 +45,7 @@ export default async function BrandDetailPage({ params }: Props) {
               id: s.id,
               rawText: s.rawText,
               sourceUrl: s.sourceUrl,
+              title: s.title,
               createdAt: s.createdAt.toISOString(),
             }))}
             initialStyle={

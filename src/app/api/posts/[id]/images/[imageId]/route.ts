@@ -50,14 +50,31 @@ export async function DELETE(_request: Request, { params }: Params) {
   const image = post.images.find((img) => img.id === imageId);
   if (!image) return jsonError("이미지를 찾을 수 없습니다.", 404);
 
+  const orphanGroupId = image.groupId;
+
   await prisma.postImage.delete({ where: { id: imageId } });
 
   const remaining = await prisma.postImage.findMany({
     where: { postId: id },
     orderBy: { orderIndex: "asc" },
   });
+
+  if (orphanGroupId) {
+    const siblings = remaining.filter((img) => img.groupId === orphanGroupId);
+    if (siblings.length < 2) {
+      await prisma.postImage.updateMany({
+        where: { postId: id, groupId: orphanGroupId },
+        data: { groupId: null },
+      });
+    }
+  }
+
+  const refreshed = await prisma.postImage.findMany({
+    where: { postId: id },
+    orderBy: { orderIndex: "asc" },
+  });
   await prisma.$transaction(
-    remaining.map((img, index) =>
+    refreshed.map((img, index) =>
       prisma.postImage.update({
         where: { id: img.id },
         data: { orderIndex: index },

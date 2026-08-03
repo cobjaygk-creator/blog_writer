@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { auth, signOut } from "@/lib/auth";
 import { buildNewCutDeepLink } from "@/lib/newcut";
-import { getPlanLimits, normalizePlan } from "@/lib/plans";
+import { getPlanLimits, isUnlimitedEmail, normalizePlan } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 
 export default async function DashboardPage() {
@@ -49,7 +49,8 @@ export default async function DashboardPage() {
 
   const newCutUrl = buildNewCutDeepLink({ from: "blog_writer" });
   const plan = normalizePlan(session.user.plan);
-  const limits = getPlanLimits(plan);
+  const unlimited = isUnlimitedEmail(session.user.email);
+  const limits = getPlanLimits(plan, session.user.email);
 
   return (
     <>
@@ -61,10 +62,11 @@ export default async function DashboardPage() {
             <p className="mt-1 text-sm text-zinc-600">
               {session.user.email}
               <span className="mx-2 text-zinc-300">·</span>
-              <span className="uppercase tracking-wide">{plan}</span>
+              <span className="uppercase tracking-wide">{unlimited ? "unlimited" : plan}</span>
               <span className="ml-2 text-zinc-500">
-                업체 {limits.brands} · 원문/업체 {limits.sourcePostsPerBrand} · 이미지/포스트{" "}
-                {limits.imagesPerPost}
+                {unlimited
+                  ? "사용한도 무제한"
+                  : `업체 ${limits.brands} · 원문/업체 ${limits.sourcePostsPerBrand} · 이미지/포스트 ${limits.imagesPerPost}`}
               </span>
             </p>
           </div>
@@ -93,16 +95,35 @@ export default async function DashboardPage() {
           </p>
         ) : null}
 
+        <section className="mt-10 grid gap-3 sm:grid-cols-2">
+          <Link
+            href="/brands"
+            className="rounded-xl border border-zinc-200 bg-white px-5 py-5 transition hover:border-zinc-300"
+          >
+            <h2 className="text-lg font-medium text-zinc-900">업체 등록</h2>
+            <p className="mt-2 text-sm text-zinc-600">업체 추가 · 샘플 원문 · 문체 학습</p>
+          </Link>
+          <Link
+            href="/posts/new"
+            className="rounded-xl border border-zinc-200 bg-white px-5 py-5 transition hover:border-zinc-300"
+          >
+            <h2 className="text-lg font-medium text-zinc-900">포스트 등록</h2>
+            <p className="mt-2 text-sm text-zinc-600">학습된 업체로 새 글 만들기</p>
+          </Link>
+        </section>
+
         <section className="mt-10">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-medium text-zinc-900">업체</h2>
-            <Link href="/brands/new">
-              <Button size="sm">업체 추가</Button>
+            <Link href="/brands">
+              <Button size="sm" variant="outline">
+                전체 보기
+              </Button>
             </Link>
           </div>
           {brands.length === 0 ? (
             <p className="mt-4 rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-sm text-zinc-500">
-              등록된 업체가 없습니다. 업체를 만들고 원문으로 문체를 학습하세요.
+              등록된 업체가 없습니다. 업체 등록에서 만들고 샘플로 문체를 학습하세요.
             </p>
           ) : (
             <ul className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -127,7 +148,12 @@ export default async function DashboardPage() {
         </section>
 
         <section className="mt-10">
-          <h2 className="text-lg font-medium text-zinc-900">최근 포스트</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium text-zinc-900">최근 포스트</h2>
+            <Link href="/posts/new">
+              <Button size="sm">포스트 등록</Button>
+            </Link>
+          </div>
           {posts.length === 0 ? (
             <p className="mt-4 text-sm text-zinc-500">아직 생성된 포스트가 없습니다.</p>
           ) : (

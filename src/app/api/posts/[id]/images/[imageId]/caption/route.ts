@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getOwnedPost, jsonError, requireUserId } from "@/lib/api-helpers";
+import { getPostCaptionTone } from "@/lib/post-caption-tone";
 import { prisma } from "@/lib/prisma";
 import { captionImage } from "@/lib/vision";
 
@@ -19,7 +20,18 @@ export async function POST(_request: Request, { params }: Params) {
 
   let result;
   try {
-    result = await captionImage(image.imageUrl, post.keyword);
+    const tone = await getPostCaptionTone(post.id, post.brandId, post.captionTone);
+    const { ensurePostProductFacts, factHighlightForCaption } = await import(
+      "@/lib/post-product"
+    );
+    const facts = await ensurePostProductFacts(post);
+    const sceneHint = `${post.keyword || ""} ${image.caption || ""} ${facts.productName}`.trim();
+    const factHighlight = await factHighlightForCaption(sceneHint, facts);
+    result = await captionImage(image.imageUrl, {
+      keyword: post.keyword,
+      tone,
+      factHighlight,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "캡션 생성에 실패했습니다.";
     return jsonError(message, 502);

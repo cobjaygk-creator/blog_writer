@@ -42,8 +42,8 @@ export default async function HomePage() {
         </a>
       </div>
       <ol className="mt-12 max-w-xl space-y-2 text-sm leading-6 text-zinc-600">
-        <li>1. 업체 생성 후 기존 글(URL/붙여넣기)로 문체 학습</li>
-        <li>2. 사진·키워드로 초안 생성</li>
+        <li>1. 업체 등록에서 샘플 원문으로 문체 학습</li>
+        <li>2. 포스트 등록에서 학습된 업체로 사진·키워드 초안 생성</li>
         <li>3. 제목·본문 복사 → 네이버/티스토리에 붙여넣기</li>
       </ol>
     </main>

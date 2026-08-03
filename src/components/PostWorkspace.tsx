@@ -4,22 +4,34 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 
+import { ImageGalleryBoard } from "@/components/ImageGalleryBoard";
+import { ImageUploadDropzone } from "@/components/ImageUploadDropzone";
+import { RichEditor } from "@/components/RichEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PublishExport } from "@/components/PublishExport";
-import { markdownToHtml } from "@/lib/markdown";
+import { copyHtmlForBlogEditor } from "@/lib/clipboard";
+import { ensureImagesInHtml, htmlToPlainText, toEditorHtml } from "@/lib/content";
+import { attachToSlotLayout } from "@/lib/image-slots";
 import { buildNewCutDeepLink } from "@/lib/newcut";
-import { ensureImagesInMarkdown } from "@/lib/publish-body";
+import { applyTemplateToBody, type TemplateKind } from "@/lib/templates";
 
 type PostImage = {
   id: string;
   imageUrl: string;
   caption: string | null;
   orderIndex: number;
+  groupId?: string | null;
+};
+
+type BrandTemplateOption = {
+  id: string;
+  name: string;
+  kind: TemplateKind;
+  html: string;
 };
 
 type PostData = {
@@ -29,28 +41,63 @@ type PostData = {
   titleCandidates: unknown;
   body: string | null;
   keyword: string | null;
+  productHighlights?: string | null;
+  captionTone?: string | null;
   status: string;
+  headerTemplateId?: string | null;
+  footerTemplateId?: string | null;
   images: PostImage[];
   brand: { id: string; name: string };
 };
 
-export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
+function imageInputs(images: PostImage[]) {
+  return images.map((img) => ({ imageUrl: img.imageUrl, caption: img.caption }));
+}
+
+export function PostWorkspace({
+  initialPost,
+  templates = [],
+}: {
+  initialPost: PostData;
+  templates?: BrandTemplateOption[];
+  brandTone?: string | null;
+}) {
   const router = useRouter();
   const [post, setPost] = useState(initialPost);
   const [keyword, setKeyword] = useState(initialPost.keyword || "");
+  const [productHighlights, setProductHighlights] = useState(
+    initialPost.productHighlights || "",
+  );
   const [title, setTitle] = useState(initialPost.title || "");
-  const [body, setBody] = useState(initialPost.body || "");
+  const [body, setBody] = useState(() =>
+    toEditorHtml(
+      initialPost.body || "",
+      imageInputs(initialPost.images),
+      initialPost.images,
+    ),
+  );
+  const [headerTemplateId, setHeaderTemplateId] = useState(initialPost.headerTemplateId || "");
+  const [footerTemplateId, setFooterTemplateId] = useState(initialPost.footerTemplateId || "");
   const [error, setError] = useState<string | null>(null);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [editorTab, setEditorTab] = useState<"edit" | "preview">("edit");
+  const [editorRevision, setEditorRevision] = useState(0);
+
+  const headerTemplates = useMemo(
+    () => templates.filter((t) => t.kind === "header"),
+    [templates],
+  );
+  const footerTemplates = useMemo(
+    () => templates.filter((t) => t.kind === "footer"),
+    [templates],
+  );
 
   const titleCandidates = useMemo(() => {
     return Array.isArray(post.titleCandidates)
       ? post.titleCandidates.filter((t): t is string => typeof t === "string")
       : [];
   }, [post.titleCandidates]);
-
-  const previewHtml = useMemo(() => markdownToHtml(body || ""), [body]);
 
   const statusLabel =
     post.status === "published"
@@ -61,12 +108,39 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
           ? "초안"
           : "수집 중";
 
-  async function uploadImages(files: FileList | null) {
-    if (!files?.length) return;
+  function applyBodyHtml(html: string) {
+    const next = ensureImagesInHtml(html, imageInputs(post.images), {
+      slotImages: post.images,
+    });
+    setBody(next);
+    setEditorRevision((n) => n + 1);
+  }
+
+  async function saveImageLayout(payload: {
+    slots: Array<{ type: "single" | "group"; imageIds: string[] }>;
+  }) {
+    setBusy("layout");
+    setError(null);
+    const res = await fetch(`/api/posts/${post.id}/images/layout`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; images?: PostImage[] };
+    setBusy(null);
+    if (!res.ok || !data.images) {
+      throw new Error(data.error || "배치 저장 실패");
+    }
+    setPost((prev) => ({ ...prev, images: data.images! }));
+  }
+
+  async function uploadImages(files: FileList | File[] | null) {
+    const list = files ? Array.from(files) : [];
+    if (!list.length) return;
     setBusy("upload");
     setError(null);
     try {
-      for (const file of Array.from(files)) {
+      for (const file of list) {
         const form = new FormData();
         form.append("file", file);
         form.append("autoCaption", "true");
@@ -89,29 +163,67 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
     }
   }
 
-  async function moveImage(imageId: string, direction: -1 | 1) {
-    const ids = post.images.map((img) => img.id);
-    const index = ids.indexOf(imageId);
-    const next = index + direction;
-    if (index < 0 || next < 0 || next >= ids.length) return;
-    const orderedIds = [...ids];
-    const [removed] = orderedIds.splice(index, 1);
-    orderedIds.splice(next, 0, removed);
-
-    setBusy(`order-${imageId}`);
+  async function addFilesToSlot(
+    targetSlotId: string,
+    files: File[],
+    options?: { mergeImageIds?: string[] },
+  ) {
+    setBusy("upload");
     setError(null);
-    const res = await fetch(`/api/posts/${post.id}/images/reorder`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderedIds }),
-    });
-    const data = (await res.json().catch(() => ({}))) as { error?: string; images?: PostImage[] };
-    setBusy(null);
-    if (!res.ok || !data.images) {
-      setError(data.error || "순서 변경 실패");
-      return;
+    const uploaded: PostImage[] = [];
+    try {
+      for (const file of files) {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("autoCaption", "true");
+        const res = await fetch(`/api/posts/${post.id}/images`, { method: "POST", body: form });
+        const data = (await res.json().catch(() => ({}))) as { error?: string; image?: PostImage };
+        if (!res.ok || !data.image) {
+          throw new Error(data.error || "업로드 실패");
+        }
+        uploaded.push(data.image);
+      }
+
+      const withUploaded = [...post.images, ...uploaded].sort((a, b) => a.orderIndex - b.orderIndex);
+      const addIds = [...uploaded.map((img) => img.id), ...(options?.mergeImageIds || [])];
+      if (!addIds.length) {
+        throw new Error("추가할 이미지가 없습니다.");
+      }
+
+      const payload = attachToSlotLayout(withUploaded, targetSlotId, addIds);
+      if (!payload) {
+        throw new Error("묶음에 더 이상 사진을 넣을 수 없습니다. (최대 4장)");
+      }
+
+      const layoutRes = await fetch(`/api/posts/${post.id}/images/layout`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const layoutData = (await layoutRes.json().catch(() => ({}))) as {
+        error?: string;
+        images?: PostImage[];
+      };
+      if (!layoutRes.ok || !layoutData.images) {
+        throw new Error(layoutData.error || "묶음 저장 실패");
+      }
+      setPost((prev) => ({ ...prev, status: "collecting", images: layoutData.images! }));
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "이미지 추가 실패");
+      if (uploaded.length) {
+        setPost((prev) => ({
+          ...prev,
+          status: "collecting",
+          images: [...prev.images, ...uploaded]
+            .filter((img, i, arr) => arr.findIndex((x) => x.id === img.id) === i)
+            .sort((a, b) => a.orderIndex - b.orderIndex),
+        }));
+      }
+      throw e;
+    } finally {
+      setBusy(null);
     }
-    setPost((prev) => ({ ...prev, images: data.images! }));
   }
 
   async function recaption(imageId: string) {
@@ -158,21 +270,37 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
       setError(data.error || "삭제 실패");
       return;
     }
-    setPost((prev) => ({
-      ...prev,
-      images: prev.images
-        .filter((img) => img.id !== imageId)
-        .map((img, orderIndex) => ({ ...img, orderIndex })),
-    }));
+    setPost((prev) => {
+      const remaining = prev.images.filter((img) => img.id !== imageId);
+      const removed = prev.images.find((img) => img.id === imageId);
+      const cleaned = remaining.map((img) => {
+        if (
+          removed?.groupId &&
+          img.groupId === removed.groupId &&
+          remaining.filter((r) => r.groupId === removed.groupId).length < 2
+        ) {
+          return { ...img, groupId: null };
+        }
+        return img;
+      });
+      return {
+        ...prev,
+        images: cleaned.map((img, orderIndex) => ({ ...img, orderIndex })),
+      };
+    });
   }
 
   async function generateDraft() {
     setBusy("generate");
     setError(null);
+    setCopyMsg(null);
     const res = await fetch(`/api/posts/${post.id}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword: keyword || undefined }),
+      body: JSON.stringify({
+        keyword: keyword || undefined,
+        productHighlights: productHighlights.trim() || null,
+      }),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
     setBusy(null);
@@ -182,24 +310,28 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
     }
     setPost(data.post);
     setTitle(data.post.title || "");
-    setBody(data.post.body || "");
     setKeyword(data.post.keyword || "");
-    setEditorTab("preview");
+    if (data.post.productHighlights !== undefined) {
+      setProductHighlights(data.post.productHighlights || "");
+    }
+    applyBodyHtml(
+      toEditorHtml(data.post.body || "", imageInputs(data.post.images), data.post.images),
+    );
+    setEditorTab("edit");
     router.refresh();
   }
 
   async function syncImagesIntoBody() {
-    const nextBody = ensureImagesInMarkdown(
-      body,
-      post.images.map((img) => ({ imageUrl: img.imageUrl, caption: img.caption })),
-    );
-    setBody(nextBody);
+    const next = ensureImagesInHtml(body, imageInputs(post.images), {
+      slotImages: post.images,
+    });
+    applyBodyHtml(next);
     setBusy("save");
     setError(null);
     const res = await fetch(`/api/posts/${post.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: nextBody, title: title || undefined, status: "draft" }),
+      body: JSON.stringify({ body: next, title: title || undefined, status: "draft" }),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
     setBusy(null);
@@ -208,7 +340,96 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
       return;
     }
     setPost(data.post);
-    setEditorTab("preview");
+  }
+
+  async function copyForPublish() {
+    if (!title.trim() && !body.trim()) return;
+    setBusy("copy");
+    setCopyMsg(null);
+    setError(null);
+    try {
+      const html = `<h1>${escapeTitle(title)}</h1>${body}`;
+      const plain = [title.trim(), "", htmlToPlainText(body)].filter(Boolean).join("\n");
+      await copyHtmlForBlogEditor(html, plain);
+      setCopyMsg("복사됨 — 네이버/티스토리 글쓰기에 붙여넣으세요.");
+    } catch {
+      setError("복사에 실패했습니다. 브라우저 클립보드 권한을 확인해 주세요.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveTemplateSelection(
+    nextHeaderId: string,
+    nextFooterId: string,
+  ) {
+    setBusy("template-select");
+    setError(null);
+    const res = await fetch(`/api/posts/${post.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        headerTemplateId: nextHeaderId || null,
+        footerTemplateId: nextFooterId || null,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
+    setBusy(null);
+    if (!res.ok) {
+      setError(data.error || "템플릿 선택 저장 실패");
+      return;
+    }
+    if (data.post) {
+      setPost((prev) => ({
+        ...prev,
+        headerTemplateId: data.post!.headerTemplateId ?? null,
+        footerTemplateId: data.post!.footerTemplateId ?? null,
+      }));
+    }
+  }
+
+  async function applySelectedTemplates() {
+    const header = headerTemplates.find((t) => t.id === headerTemplateId);
+    const footer = footerTemplates.find((t) => t.id === footerTemplateId);
+    if (!header && !footer) {
+      setError("적용할 머리말/꼬리말 템플릿을 선택해 주세요.");
+      return;
+    }
+
+    let next = body;
+    if (header) next = applyTemplateToBody(next, "header", header.html, header.id);
+    if (footer) next = applyTemplateToBody(next, "footer", footer.html, footer.id);
+    next = toEditorHtml(next, imageInputs(post.images), post.images);
+
+    setBody(next);
+    setEditorRevision((n) => n + 1);
+    setError(null);
+    setBusy("template-apply");
+    const res = await fetch(`/api/posts/${post.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        body: next,
+        headerTemplateId: headerTemplateId || null,
+        footerTemplateId: footerTemplateId || null,
+        status: "draft",
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
+    setBusy(null);
+    if (!res.ok) {
+      setError(data.error || "템플릿 적용 저장 실패");
+      return;
+    }
+    if (data.post) {
+      setPost((prev) => ({
+        ...prev,
+        body: data.post!.body,
+        status: data.post!.status,
+        headerTemplateId: data.post!.headerTemplateId ?? null,
+        footerTemplateId: data.post!.footerTemplateId ?? null,
+      }));
+    }
   }
 
   async function saveDraft(event: FormEvent) {
@@ -222,6 +443,7 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
         title: title || undefined,
         body,
         keyword: keyword || null,
+        productHighlights: productHighlights.trim() || null,
         status: "draft",
       }),
     });
@@ -232,16 +454,19 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
       return;
     }
     setPost(data.post);
+    if (data.post.productHighlights !== undefined) {
+      setProductHighlights(data.post.productHighlights || "");
+    }
     router.refresh();
   }
 
   async function setStatus(status: "published" | "archived" | "draft") {
     if (status === "published" && !title.trim()) {
-      setError("발행 전에 제목을 입력하세요.");
+      setError("올림 표시 전에 제목을 입력하세요.");
       return;
     }
     if (status === "published" && !body.trim()) {
-      setError("발행 전에 본문을 입력하세요.");
+      setError("올림 표시 전에 본문을 입력하세요.");
       return;
     }
     if (status === "published" && !confirm("네이버/티스토리에 올렸다면 올림 표시로 바꿀까요?")) return;
@@ -267,7 +492,9 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
     }
     setPost(data.post);
     setTitle(data.post.title || "");
-    setBody(data.post.body || "");
+    applyBodyHtml(
+      toEditorHtml(data.post.body || "", imageInputs(data.post.images), data.post.images),
+    );
   }
 
   const newCutUrl = buildNewCutDeepLink({
@@ -276,6 +503,8 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
     brandId: post.brandId,
     postId: post.id,
   });
+
+  const canCopy = Boolean(title.trim() || body.replace(/<[^>]+>/g, "").trim());
 
   return (
     <div className="space-y-6">
@@ -327,86 +556,29 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
             />
           </Label>
           <Label>
-            <span>이미지 업로드</span>
-            <Input
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              multiple
-              disabled={busy === "upload"}
-              onChange={(e) => {
-                void uploadImages(e.target.files);
-                e.target.value = "";
-              }}
+            <span>제품 특장점 (선택)</span>
+            <Textarea
+              rows={3}
+              value={productHighlights}
+              onChange={(e) => setProductHighlights(e.target.value)}
+              placeholder="비우면 키워드 제품명을 자동 조사합니다"
+              maxLength={2000}
             />
           </Label>
+          <ImageUploadDropzone
+            disabled={busy === "upload"}
+            onFiles={(files) => void uploadImages(files)}
+          />
 
-          {post.images.length === 0 ? (
-            <p className="text-sm text-zinc-500">아직 업로드된 사진이 없습니다.</p>
-          ) : (
-            <ul className="space-y-4">
-              {post.images.map((image, index) => (
-                <li key={image.id} className="grid gap-3 rounded-xl border border-zinc-200 p-3 md:grid-cols-[160px_1fr]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={image.imageUrl}
-                    alt={image.caption || `image ${index + 1}`}
-                    className="h-36 w-full rounded-lg object-cover"
-                  />
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={index === 0 || Boolean(busy)}
-                        onClick={() => moveImage(image.id, -1)}
-                      >
-                        위로
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={index === post.images.length - 1 || Boolean(busy)}
-                        onClick={() => moveImage(image.id, 1)}
-                      >
-                        아래로
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={busy === `cap-${image.id}`}
-                        onClick={() => recaption(image.id)}
-                      >
-                        캡션 재생성
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy === `del-${image.id}`}
-                        onClick={() => removeImage(image.id)}
-                      >
-                        삭제
-                      </Button>
-                    </div>
-                    <Textarea
-                      rows={3}
-                      defaultValue={image.caption || ""}
-                      key={`${image.id}-${image.caption || ""}`}
-                      onBlur={(e) => {
-                        const next = e.target.value.trim();
-                        if (next !== (image.caption || "")) {
-                          void saveCaption(image.id, next);
-                        }
-                      }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ImageGalleryBoard
+            images={post.images}
+            busy={busy}
+            onLayoutChange={saveImageLayout}
+            onRecaption={(imageId) => void recaption(imageId)}
+            onSaveCaption={(imageId, caption) => void saveCaption(imageId, caption)}
+            onRemove={(imageId) => void removeImage(imageId)}
+            onAddFilesToSlot={(slotId, files, options) => addFilesToSlot(slotId, files, options)}
+          />
 
           <div className="flex flex-wrap gap-2">
             <Button type="button" onClick={generateDraft} disabled={busy === "generate" || !keyword.trim()}>
@@ -423,30 +595,32 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
               </Button>
             ) : null}
           </div>
-          <p className="text-xs text-zinc-500">
-            초안 생성 시 사진이 본문 마크다운에 함께 들어갑니다. 미리보기에서 위치를 확인하세요.
-          </p>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>초안 편집기</CardTitle>
-          <div className="flex rounded-lg border border-zinc-200 p-0.5 text-xs">
-            <button
-              type="button"
-              className={`rounded-md px-3 py-1.5 ${editorTab === "edit" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
-              onClick={() => setEditorTab("edit")}
-            >
-              편집
-            </button>
-            <button
-              type="button"
-              className={`rounded-md px-3 py-1.5 ${editorTab === "preview" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
-              onClick={() => setEditorTab("preview")}
-            >
-              미리보기
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-lg border border-zinc-200 p-0.5 text-xs">
+              <button
+                type="button"
+                className={`rounded-md px-3 py-1.5 ${editorTab === "edit" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+                onClick={() => setEditorTab("edit")}
+              >
+                편집
+              </button>
+              <button
+                type="button"
+                className={`rounded-md px-3 py-1.5 ${editorTab === "preview" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+                onClick={() => setEditorTab("preview")}
+              >
+                미리보기
+              </button>
+            </div>
+            <Button type="button" disabled={!canCopy || busy === "copy"} onClick={() => void copyForPublish()}>
+              {busy === "copy" ? "복사 중…" : "복사"}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -469,56 +643,132 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
                 ))}
               </div>
             ) : null}
-            {editorTab === "edit" ? (
-              <Label>
-                <span>본문 (마크다운)</span>
-                <Textarea
-                  rows={18}
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  className="font-mono text-[13px] leading-6"
-                  placeholder="초안을 생성하면 여기에 본문이 채워집니다."
-                />
-              </Label>
-            ) : (
-              <div className="min-h-[28rem] rounded-lg border border-zinc-200 bg-white px-4 py-3">
-                {body.trim() ? (
-                  <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-                ) : (
-                  <p className="text-sm text-zinc-500">미리볼 본문이 없습니다.</p>
-                )}
+
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-zinc-800">머리말·꼬리말 템플릿</p>
+                <Link
+                  href={`/brands/${post.brandId}/templates`}
+                  className="text-xs text-zinc-500 hover:text-zinc-800"
+                >
+                  템플릿 관리
+                </Link>
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Label>
+                  <span>머리말</span>
+                  <select
+                    className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                    value={headerTemplateId}
+                    disabled={busy === "template-select" || busy === "template-apply"}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setHeaderTemplateId(next);
+                      void saveTemplateSelection(next, footerTemplateId);
+                    }}
+                  >
+                    <option value="">선택 안 함</option>
+                    {headerTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </Label>
+                <Label>
+                  <span>꼬리말</span>
+                  <select
+                    className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                    value={footerTemplateId}
+                    disabled={busy === "template-select" || busy === "template-apply"}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setFooterTemplateId(next);
+                      void saveTemplateSelection(headerTemplateId, next);
+                    }}
+                  >
+                    <option value="">선택 안 함</option>
+                    {footerTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </Label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={
+                    busy === "template-apply" ||
+                    (!headerTemplateId && !footerTemplateId)
+                  }
+                  onClick={() => void applySelectedTemplates()}
+                >
+                  {busy === "template-apply" ? "적용 중…" : "본문에 적용"}
+                </Button>
+                <p className="text-xs text-zinc-500">
+                  선택만 저장되고, 적용 시 머리말은 맨 위·꼬리말은 맨 아래에 넣습니다. 다시 적용하면 교체됩니다.
+                </p>
+              </div>
+              {headerTemplates.length === 0 && footerTemplates.length === 0 ? (
+                <p className="text-xs text-amber-700">
+                  아직 템플릿이 없습니다. 템플릿 관리에서 머리말/꼬리말을 만들어 주세요.
+                </p>
+              ) : null}
+            </div>
+
+            {editorTab === "edit" ? (
+              <RichEditor
+                value={body}
+                revision={editorRevision}
+                onChange={setBody}
+                placeholder="초안을 생성하면 이미지와 함께 여기에 표시됩니다."
+              />
+            ) : (
+              <div
+                className="rich-doc min-h-[28rem] rounded-lg border border-zinc-200 bg-white px-4 py-3"
+                dangerouslySetInnerHTML={{
+                  __html: body || '<p class="text-zinc-500">미리볼 본문이 없습니다.</p>',
+                }}
+              />
             )}
+
+            {copyMsg ? (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                {copyMsg}
+              </p>
+            ) : (
+              <p className="text-xs text-zinc-500">
+                복사 후 네이버/티스토리 글쓰기에 붙여넣으면 서식과 사진 유지를 시도합니다.
+              </p>
+            )}
+
             <div className="flex flex-wrap gap-2">
               <Button type="submit" disabled={busy === "save"}>
                 {busy === "save" ? "저장 중…" : "초안 저장"}
               </Button>
               {post.status === "published" ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy === "status"}
-                  onClick={() => setStatus("draft")}
-                >
+                <Button type="button" variant="outline" disabled={busy === "status"} onClick={() => setStatus("draft")}>
                   올림 표시 취소
-                </Button>
-              ) : null}
-              {post.status === "archived" ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={busy === "status"}
-                  onClick={() => setStatus("draft")}
-                >
-                  보관 해제
                 </Button>
               ) : (
                 <Button
                   type="button"
-                  variant="ghost"
-                  disabled={busy === "status"}
-                  onClick={() => setStatus("archived")}
+                  variant="outline"
+                  disabled={busy === "status" || !canCopy}
+                  onClick={() => setStatus("published")}
                 >
+                  올림 표시
+                </Button>
+              )}
+              {post.status === "archived" ? (
+                <Button type="button" variant="ghost" disabled={busy === "status"} onClick={() => setStatus("draft")}>
+                  보관 해제
+                </Button>
+              ) : (
+                <Button type="button" variant="ghost" disabled={busy === "status"} onClick={() => setStatus("archived")}>
                   보관
                 </Button>
               )}
@@ -526,17 +776,14 @@ export function PostWorkspace({ initialPost }: { initialPost: PostData }) {
           </form>
         </CardContent>
       </Card>
-
-      {(body.trim() || title.trim()) && (
-        <PublishExport
-          title={title}
-          body={body}
-          images={post.images}
-          busy={busy === "status"}
-          onMarkedPublished={() => setStatus("published")}
-          onSyncImagesIntoBody={() => void syncImagesIntoBody()}
-        />
-      )}
     </div>
   );
+}
+
+function escapeTitle(title: string) {
+  return title
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

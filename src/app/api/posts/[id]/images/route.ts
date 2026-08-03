@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getOwnedPost, jsonError, requireUserId } from "@/lib/api-helpers";
 import { uploadMaxBytes } from "@/lib/integrations";
 import { assertCanAddImage } from "@/lib/plan-guards";
+import { getPostCaptionTone } from "@/lib/post-caption-tone";
 import { prisma } from "@/lib/prisma";
 import { uploadImageBuffer } from "@/lib/storage";
 import { captionImage } from "@/lib/vision";
@@ -76,7 +77,18 @@ export async function POST(request: Request, { params }: Params) {
   let captionError: string | null = null;
   if (autoCaption) {
     try {
-      const result = await captionImage(upload.imageUrl, post.keyword);
+      const tone = await getPostCaptionTone(post.id, post.brandId, post.captionTone);
+      const { ensurePostProductFacts, factHighlightForCaption } = await import(
+        "@/lib/post-product"
+      );
+      const facts = await ensurePostProductFacts(post);
+      const sceneHint = `${post.keyword || ""} ${facts.productName}`.trim();
+      const factHighlight = await factHighlightForCaption(sceneHint, facts);
+      const result = await captionImage(upload.imageUrl, {
+        keyword: post.keyword,
+        tone,
+        factHighlight,
+      });
       image = await prisma.postImage.update({
         where: { id: image.id },
         data: { caption: result.caption },

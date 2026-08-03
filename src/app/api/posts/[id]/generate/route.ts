@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getOwnedPost, jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
+import { toEditorHtml } from "@/lib/content";
+import { imagesToSlots } from "@/lib/image-slots";
 import { generateBlogDraft } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
+import { ensurePostProductFacts } from "@/lib/post-product";
+import { findSimilarSources } from "@/lib/similar-sources";
 
 const generateSchema = z.object({
   keyword: z.string().trim().min(1).max(120).optional(),
+  productHighlights: z.string().trim().max(2000).optional().nullable(),
 });
 
 type Params = { params: Promise<{ id: string }> };
@@ -32,6 +37,18 @@ export async function POST(request: Request, { params }: Params) {
     return jsonError("키워드가 필요합니다.", 400);
   }
 
+  const productHighlights =
+    parsed.data.productHighlights !== undefined
+      ? parsed.data.productHighlights?.trim() || null
+      : post.productHighlights;
+
+  if (keyword !== post.keyword || productHighlights !== post.productHighlights) {
+    await prisma.post.update({
+      where: { id },
+      data: { keyword, productHighlights, productFactsJson: null },
+    });
+  }
+
   const styleProfile = await prisma.styleProfile.findUnique({
     where: { brandId: post.brandId },
   });
@@ -49,6 +66,56 @@ export async function POST(request: Request, { params }: Params) {
     imageUrl: img.imageUrl,
     caption: img.caption,
   }));
+  const slotImages = post.images.map((img) => ({
+    id: img.id,
+    imageUrl: img.imageUrl,
+    caption: img.caption,
+    orderIndex: img.orderIndex,
+    groupId: img.groupId,
+  }));
+  const imageSlots = imagesToSlots(slotImages).map((slot) =>
+    slot.kind === "single"
+      ? {
+          type: "single" as const,
+          images: [{ imageUrl: slot.image.imageUrl, caption: slot.image.caption }],
+        }
+      : {
+          type: "group" as const,
+          images: slot.images.map((img) => ({ imageUrl: img.imageUrl, caption: img.caption })),
+        },
+  );
+
+  const productFacts = await ensurePostProductFacts({
+    id: post.id,
+    keyword,
+    productHighlights,
+    productFactsJson:
+      keyword !== post.keyword || productHighlights !== post.productHighlights
+        ? null
+        : post.productFactsJson,
+  });
+
+  const captionBlob = images
+    .map((img) => img.caption?.trim())
+    .filter(Boolean)
+    .join("\n");
+  const sourceCorpus = await prisma.sourcePost.findMany({
+    where: { brandId: post.brandId },
+    orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+    take: 100,
+    select: {
+      id: true,
+      title: true,
+      rawText: true,
+      publishedAt: true,
+      createdAt: true,
+    },
+  });
+  const similarSources = findSimilarSources(
+    `${keyword}\n${productFacts.productName}\n${productFacts.highlights.join(" ")}\n${captionBlob}`,
+    sourceCorpus,
+    3,
+  ).map((s) => ({ title: s.title, excerpt: s.excerpt }));
 
   let draft;
   try {
@@ -59,19 +126,25 @@ export async function POST(request: Request, { params }: Params) {
       traitsJson: styleProfile.traitsJson,
       sampleAnchors,
       images,
+      imageSlots,
+      similarSources,
+      productFacts,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "초안 생성에 실패했습니다.";
     return jsonError(message, 502);
   }
 
+  const bodyHtml = toEditorHtml(draft.body, images, slotImages);
+
   const updated = await prisma.post.update({
     where: { id },
     data: {
       keyword,
+      productHighlights,
       title: draft.title,
       titleCandidates: draft.titleCandidates,
-      body: draft.body,
+      body: bodyHtml,
       status: "draft",
     },
     include: {
@@ -83,5 +156,6 @@ export async function POST(request: Request, { params }: Params) {
   return NextResponse.json({
     post: updated,
     meta: draft.meta,
+    productFacts,
   });
 }

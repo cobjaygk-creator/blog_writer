@@ -14,11 +14,11 @@ export default async function NewBrandPage() {
     <>
       <AppNav email={session.user.email} />
       <main className="mx-auto w-full max-w-xl px-6 py-10">
-        <Link href="/dashboard" className="text-sm text-zinc-500 hover:text-zinc-800">
-          ← 대시보드
+        <Link href="/brands" className="text-sm text-zinc-500 hover:text-zinc-800">
+          ← 업체 등록
         </Link>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900">업체 추가</h1>
-        <p className="mt-2 text-sm text-zinc-600">문체 학습과 포스트 생성의 단위가 되는 업체를 만듭니다.</p>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900">새 업체</h1>
+        <p className="mt-2 text-sm text-zinc-600">업체를 만든 뒤 샘플 원문으로 문체를 학습합니다.</p>
         <Card className="mt-8">
           <CardHeader>
             <CardTitle>기본 정보</CardTitle>

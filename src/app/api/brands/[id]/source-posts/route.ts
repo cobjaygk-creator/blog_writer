@@ -78,6 +78,7 @@ export async function POST(request: Request, { params }: Params) {
       brandId: id,
       rawText,
       sourceUrl,
+      title: fetchedTitle,
     },
   });
 

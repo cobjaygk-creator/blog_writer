@@ -19,12 +19,15 @@ export function AppNav({
           <Link href="/" className="text-sm font-semibold tracking-tight text-zinc-900">
             blog_writer
           </Link>
-          <nav className="flex items-center gap-3 text-sm text-zinc-600">
+          <nav className="flex flex-wrap items-center gap-3 text-sm text-zinc-600">
             <Link href="/dashboard" className="hover:text-zinc-900">
               대시보드
             </Link>
-            <Link href="/brands/new" className="hover:text-zinc-900">
-              업체 추가
+            <Link href="/brands" className="hover:text-zinc-900">
+              업체 등록
+            </Link>
+            <Link href="/posts/new" className="hover:text-zinc-900">
+              포스트 등록
             </Link>
             <a
               href={newCutUrl}

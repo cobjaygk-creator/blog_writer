@@ -19,8 +19,8 @@ New Cut은 메뉴/딥링크로만 연결합니다 (`NEXT_PUBLIC_NEW_CUT_URL`).
 1. 회원가입 / 로그인 / 세션
 2. 업체 CRUD · 원문(SourcePost) · 스타일 학습(StyleProfile)
 3. 포스트 생성 · 사진 업로드(S3 또는 로컬 `public/uploads`) · 비전 캡션 · 순서 변경
-4. StyleProfile + 키워드 + 캡션으로 초안 생성 · 마크다운 편집
-5. 네이버/티스토리용 제목·본문·사진 복사 패널
+4. StyleProfile + 키워드 + 캡션으로 초안 생성 · 스마트 에디터 편집
+5. 네이버/티스토리용 원클릭 복사(서식·이미지)
 6. New Cut 딥링크 (`?from=blog_writer&source=blog#/studio/create`)
 
 LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있습니다.  

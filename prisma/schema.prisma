@@ -20,6 +20,20 @@ enum PostStatus {
   archived
 }
 
+enum TemplateKind {
+  header
+  footer
+}
+
+enum ImportJobStatus {
+  pending
+  listing
+  fetching
+  learning
+  completed
+  failed
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -31,29 +45,75 @@ model User {
 }
 
 model Brand {
-  id            String         @id @default(cuid())
+  id            String          @id @default(cuid())
   userId        String
   name          String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourcePosts   SourcePost[]
   styleProfile  StyleProfile?
   posts         Post[]
+  templates     BrandTemplate[]
+  importJobs    SourceImportJob[]
 
   @@index([userId])
 }
 
-model SourcePost {
-  id        String   @id @default(cuid())
+model BrandTemplate {
+  id        String       @id @default(cuid())
   brandId   String
-  rawText   String
-  /// Optional origin URL when the source was imported from the web
-  sourceUrl String?
-  createdAt DateTime @default(now())
-  brand     Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  name      String
+  kind      TemplateKind
+  html      String       @db.Text
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  brand     Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  headerPosts Post[]     @relation("PostHeaderTemplate")
+  footerPosts Post[]     @relation("PostFooterTemplate")
 
   @@index([brandId])
+  @@index([brandId, kind])
+}
+
+model SourcePost {
+  id          String    @id @default(cuid())
+  brandId     String
+  rawText     String
+  /// Optional origin URL when the source was imported from the web
+  sourceUrl   String?
+  title       String?
+  publishedAt DateTime?
+  /// External post id (e.g. Naver logNo)
+  externalId  String?
+  createdAt   DateTime  @default(now())
+  brand       Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+  @@index([brandId, sourceUrl])
+  @@index([brandId, externalId])
+}
+
+model SourceImportJob {
+  id           String          @id @default(cuid())
+  brandId      String
+  blogId       String
+  status       ImportJobStatus @default(pending)
+  targetCount  Int             @default(100)
+  listedCount  Int             @default(0)
+  fetchedCount Int             @default(0)
+  skippedCount Int             @default(0)
+  failedCount  Int             @default(0)
+  /// Queue items: [{ logNo, url, title?, publishedAt?, status, error? }]
+  itemsJson    Json
+  error        String?
+  autoLearn    Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  brand        Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+  @@index([brandId, status])
 }
 
 model StyleProfile {
@@ -72,21 +132,33 @@ model StyleProfile {
 }
 
 model Post {
-  id          String      @id @default(cuid())
-  brandId     String
-  title       String?
+  id                String         @id @default(cuid())
+  brandId           String
+  title             String?
   /// JSON string array of title candidates when generated
-  titleCandidates Json?
-  body        String?
-  keyword     String?
-  status      PostStatus  @default(collecting)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  brand       Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  images      PostImage[]
+  titleCandidates   Json?
+  body              String?
+  keyword           String?
+  /// Optional user-provided product highlights / selling points
+  productHighlights String?        @db.Text
+  /// Cached product fact card: { productName, highlights[], source, caution? }
+  productFactsJson  Json?
+  /// Caption voice for vision captions. Null / brand sentinel → StyleTraits.tone
+  captionTone       String?
+  status            PostStatus     @default(collecting)
+  headerTemplateId  String?
+  footerTemplateId  String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  brand             Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  headerTemplate    BrandTemplate? @relation("PostHeaderTemplate", fields: [headerTemplateId], references: [id], onDelete: SetNull)
+  footerTemplate    BrandTemplate? @relation("PostFooterTemplate", fields: [footerTemplateId], references: [id], onDelete: SetNull)
+  images            PostImage[]
 
   @@index([brandId])
   @@index([status])
+  @@index([headerTemplateId])
+  @@index([footerTemplateId])
 }
 
 model PostImage {
@@ -95,9 +167,12 @@ model PostImage {
   imageUrl   String
   caption    String?
   orderIndex Int      @default(0)
+  /// Same non-null value = photo group (max 4 images). Null = standalone.
+  groupId    String?
   createdAt  DateTime @default(now())
   post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
   @@index([postId, orderIndex])
+  @@index([postId, groupId])
 }

@@ -16,7 +16,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   },
   lite: {
     brands: 10,
-    sourcePostsPerBrand: 20,
+    sourcePostsPerBrand: 100,
     postsPerDay: 30,
     imagesPerPost: 20,
   },
@@ -28,12 +28,38 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   },
 };
 
+/** Default / hard cap for Naver blog bulk import. */
+export const BULK_IMPORT_TARGET = 100;
+export const STYLE_LEARN_SAMPLE_SIZE = 20;
+export const STYLE_LEARN_MIN_CHARS = 200;
+
+/** Accounts that bypass all plan usage caps. */
+const UNLIMITED_EMAILS = new Set(
+  (process.env.UNLIMITED_USER_EMAILS ?? "test@test.com")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+export const UNLIMITED_LIMITS: PlanLimits = {
+  brands: Number.MAX_SAFE_INTEGER,
+  sourcePostsPerBrand: Number.MAX_SAFE_INTEGER,
+  postsPerDay: Number.MAX_SAFE_INTEGER,
+  imagesPerPost: Number.MAX_SAFE_INTEGER,
+};
+
+export function isUnlimitedEmail(email?: string | null): boolean {
+  if (!email) return false;
+  return UNLIMITED_EMAILS.has(email.trim().toLowerCase());
+}
+
 export function normalizePlan(plan?: string | null): PlanId {
   if (plan === "lite" || plan === "pro") return plan;
   return "free";
 }
 
-export function getPlanLimits(plan?: string | null): PlanLimits {
+export function getPlanLimits(plan?: string | null, email?: string | null): PlanLimits {
+  if (isUnlimitedEmail(email)) return UNLIMITED_LIMITS;
   return PLAN_LIMITS[normalizePlan(plan)];
 }
 

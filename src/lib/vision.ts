@@ -74,10 +74,25 @@ async function toVisionAccessibleUrl(imageUrl: string): Promise<string> {
   return imageUrl;
 }
 
+export type CaptionImageOptions = {
+  keyword?: string | null;
+  tone?: string | null;
+  /** Optional product highlight already matched to this photo (0~1). */
+  factHighlight?: string | null;
+};
+
 export async function captionImage(
   imageUrl: string,
-  keyword?: string | null,
+  keywordOrOptions?: string | null | CaptionImageOptions,
 ): Promise<CaptionResult> {
+  const options: CaptionImageOptions =
+    typeof keywordOrOptions === "object" && keywordOrOptions !== null
+      ? keywordOrOptions
+      : { keyword: keywordOrOptions };
+  const keyword = options.keyword;
+  const tone = options.tone?.trim() || "";
+  const factHighlight = options.factHighlight?.trim() || "";
+
   const { apiKey, baseUrl, model } = getVisionConfig();
 
   if (!apiKey) {
@@ -93,6 +108,12 @@ export async function captionImage(
 
   try {
     const visionUrl = await toVisionAccessibleUrl(imageUrl);
+    const toneLine = tone
+      ? `문체/톤: "${tone}". 이 톤에 맞게 쓰되, 사실 왜곡은 하지 마세요.`
+      : "";
+    const factLine = factHighlight
+      ? `관련 제품 포인트(사진과 직접 관련될 때만 자연스럽게 1회 연결, 안 보이면 무시): "${factHighlight}"`
+      : "";
     const response = await fetchWithTimeout(
       `${baseUrl}/chat/completions`,
       {
@@ -108,8 +129,16 @@ export async function captionImage(
           messages: [
             {
               role: "system",
-              content:
-                "당신은 블로그용 한국어 이미지 캡션 작가입니다. 1~2문장으로 장면·분위기·맥락을 설명하세요. 따옴표 없이 본문만 출력하세요.",
+              content: [
+                "당신은 시공/제품 블로그용 한국어 이미지 캡션 작가입니다.",
+                "1순위: 사진에 실제로 보이는 것. 2순위: 주어진 제품 포인트(관련될 때만).",
+                "색·재질·위치·작업 상태를 구체적으로. 추측·과장·없는 요소 금지.",
+                "라이프스타일 형용사 나열 금지. 따옴표 없이 본문만 1~2문장.",
+                toneLine,
+                factLine,
+              ]
+                .filter(Boolean)
+                .join(" "),
             },
             {
               role: "user",
@@ -117,8 +146,12 @@ export async function captionImage(
                 {
                   type: "text",
                   text: keyword
-                    ? `키워드 "${keyword}"와 연결해 이 사진을 설명하세요.`
-                    : "이 사진을 블로그용으로 설명하세요.",
+                    ? `키워드 "${keyword}" 맥락의 블로그용 캡션입니다. 사진에 보이는 사실을 우선하세요.${
+                        factHighlight ? ` 가능하면 제품 포인트와 연결하세요.` : ""
+                      }${tone ? ` 톤은 "${tone}"에 맞추세요.` : ""}`
+                    : `이 사진에 보이는 장면을 시공 작업기 톤으로 사실 위주로 설명하세요.${
+                        tone ? ` 톤은 "${tone}"에 맞추세요.` : ""
+                      }`,
                 },
                 { type: "image_url", image_url: { url: visionUrl } },
               ],

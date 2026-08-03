@@ -26,7 +26,7 @@ export function visionTimeoutMs() {
 }
 
 export function llmMaxTokens() {
-  return envInt("LLM_MAX_TOKENS", 2_500, 256, 8_000);
+  return envInt("LLM_MAX_TOKENS", 3_500, 256, 8_000);
 }
 
 export function visionMaxTokens() {
