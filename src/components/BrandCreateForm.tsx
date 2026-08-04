@@ -25,7 +25,7 @@ export function BrandCreateForm() {
     const data = (await res.json().catch(() => ({}))) as { error?: string; brand?: { id: string } };
     setBusy(false);
     if (!res.ok || !data.brand) {
-      setError(data.error || "업체 생성에 실패했습니다.");
+      setError(data.error || "테마 생성에 실패했습니다.");
       return;
     }
     router.push(`/brands/${data.brand.id}`);
@@ -35,7 +35,7 @@ export function BrandCreateForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Label>
-        <span>업체 이름</span>
+        <span>테마 이름</span>
         <Input
           required
           maxLength={80}
@@ -46,7 +46,7 @@ export function BrandCreateForm() {
       </Label>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <Button type="submit" disabled={busy || !name.trim()}>
-        {busy ? "생성 중…" : "업체 만들기"}
+        {busy ? "생성 중…" : "테마 만들기"}
       </Button>
     </form>
   );

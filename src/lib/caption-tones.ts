@@ -26,8 +26,8 @@ export function resolveCaptionTone(
 
 export function captionToneOptions(brandTone?: string | null) {
   const brandLabel = brandTone?.trim()
-    ? `업체 설정 (${brandTone.trim()})`
-    : "업체 설정 (학습 톤)";
+    ? `테마 기본 (${brandTone.trim()})`
+    : "테마 기본 톤";
   return [
     { value: BRAND_CAPTION_TONE, label: brandLabel },
     ...CAPTION_TONE_PRESETS.map((p) => ({ value: p.value, label: p.label })),

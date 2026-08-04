@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getOwnedPost, jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
+import { POST_MODES } from "@/lib/post-modes";
 import { prisma } from "@/lib/prisma";
 
 const updateSchema = z.object({
@@ -10,6 +11,8 @@ const updateSchema = z.object({
   keyword: z.string().trim().min(1).max(120).optional().nullable(),
   productHighlights: z.string().trim().max(2000).optional().nullable(),
   captionTone: z.string().trim().min(1).max(200).optional().nullable(),
+  mode: z.enum(POST_MODES).optional(),
+  brandId: z.string().min(1).optional(),
   status: z.enum(["collecting", "draft", "published", "archived"]).optional(),
   headerTemplateId: z.string().min(1).nullable().optional(),
   footerTemplateId: z.string().min(1).nullable().optional(),
@@ -65,6 +68,14 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!tpl) return jsonError("꼬리말 템플릿을 찾을 수 없습니다.", 400);
   }
 
+  if (parsed.data.brandId && parsed.data.brandId !== owned.brandId) {
+    const brand = await prisma.brand.findFirst({
+      where: { id: parsed.data.brandId, userId: userId! },
+      select: { id: true },
+    });
+    if (!brand) return jsonError("테마를 찾을 수 없습니다.", 404);
+  }
+
   const post = await prisma.post.update({
     where: { id },
     data: {
@@ -79,6 +90,8 @@ export async function PATCH(request: Request, { params }: Params) {
         parsed.data.captionTone === undefined
           ? undefined
           : parsed.data.captionTone?.trim() || null,
+      mode: parsed.data.mode,
+      brandId: parsed.data.brandId,
       status: parsed.data.status,
       headerTemplateId:
         parsed.data.headerTemplateId === undefined ? undefined : parsed.data.headerTemplateId,

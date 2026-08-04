@@ -9,9 +9,11 @@ const ACCEPT = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 type Props = {
   disabled?: boolean;
   onFiles: (files: File[]) => void;
+  /** Defaults to "이미지 업로드" */
+  label?: string;
 };
 
-export function ImageUploadDropzone({ disabled, onFiles }: Props) {
+export function ImageUploadDropzone({ disabled, onFiles, label = "이미지 업로드" }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -29,7 +31,7 @@ export function ImageUploadDropzone({ disabled, onFiles }: Props) {
 
   return (
     <div>
-      <p className="mb-1.5 text-sm font-medium text-zinc-800">이미지 업로드</p>
+      <p className="mb-1.5 text-sm font-medium text-zinc-800">{label}</p>
       <div
         role="button"
         tabIndex={0}
@@ -72,7 +74,7 @@ export function ImageUploadDropzone({ disabled, onFiles }: Props) {
           handleFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-6 text-center transition",
+          "flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-6 text-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20",
           disabled && "cursor-not-allowed opacity-60",
           dragging
             ? "border-amber-400 bg-amber-50"
@@ -80,7 +82,7 @@ export function ImageUploadDropzone({ disabled, onFiles }: Props) {
         )}
       >
         <p className="text-sm font-medium text-zinc-800">
-          {dragging ? "여기에 놓으면 업로드됩니다" : "사진을 드래그해 놓거나 클릭해서 선택"}
+          {dragging ? "여기에 놓으면 선택됩니다" : "사진을 드래그해 놓거나 클릭해서 선택"}
         </p>
         <p className="mt-1 text-xs text-zinc-500">JPEG, PNG, WebP, GIF · 여러 장 가능</p>
         {disabled ? <p className="mt-2 text-xs text-zinc-500">업로드 중…</p> : null}

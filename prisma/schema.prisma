@@ -13,6 +13,34 @@ enum Plan {
   pro
 }
 
+enum UserRole {
+  user
+  admin
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  canceled
+  expired
+  paused
+}
+
+enum BillingInterval {
+  monthly
+  yearly
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  canceled
+  refunded
+  partial_refund
+}
+
 enum PostStatus {
   collecting
   draft
@@ -34,14 +62,31 @@ enum ImportJobStatus {
   failed
 }
 
+/// Wizard content mode for a post
+enum PostMode {
+  worklog
+  topic
+  product
+}
+
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  plan         Plan     @default(free)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  brands       Brand[]
+  id                String         @id @default(cuid())
+  email             String         @unique
+  passwordHash      String
+  plan              Plan           @default(free)
+  role              UserRole       @default(user)
+  planOverrideCode  String?
+  planOverrideNote  String?
+  planOverrideUntil DateTime?
+  suspendedAt       DateTime?
+  tossCustomerKey   String?        @unique
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  brands            Brand[]
+  subscriptions     Subscription[]
+  payments          Payment[]
+  usageDaily        UsageDaily[]
+  auditLogs         AdminAuditLog[] @relation("AuditActor")
 }
 
 model Brand {
@@ -56,8 +101,25 @@ model Brand {
   posts         Post[]
   templates     BrandTemplate[]
   importJobs    SourceImportJob[]
+  reviewCaches  ProductReviewCache[]
 
   @@index([userId])
+}
+
+/// Cached web-review themes for a brand + product name (TTL-based refresh).
+model ProductReviewCache {
+  id               String   @id @default(cuid())
+  brandId          String
+  productName      String
+  /// { productName, themes: [{ theme, sentiment, sourceCount }], fetchedAt }
+  reviewThemesJson Json
+  fetchedAt        DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  brand            Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, productName])
+  @@index([brandId])
 }
 
 model BrandTemplate {
@@ -134,6 +196,8 @@ model StyleProfile {
 model Post {
   id                String         @id @default(cuid())
   brandId           String
+  /// Wizard mode: worklog | topic | product
+  mode              PostMode       @default(worklog)
   title             String?
   /// JSON string array of title candidates when generated
   titleCandidates   Json?
@@ -154,11 +218,36 @@ model Post {
   headerTemplate    BrandTemplate? @relation("PostHeaderTemplate", fields: [headerTemplateId], references: [id], onDelete: SetNull)
   footerTemplate    BrandTemplate? @relation("PostFooterTemplate", fields: [footerTemplateId], references: [id], onDelete: SetNull)
   images            PostImage[]
+  drafts            PostDraft[]
 
   @@index([brandId])
   @@index([status])
+  @@index([brandId, mode])
   @@index([headerTemplateId])
   @@index([footerTemplateId])
+}
+
+/// Candidate drafts from dual providers (GPT / Gemini). Selected draft syncs to Post.title/body.
+model PostDraft {
+  id              String   @id @default(cuid())
+  postId          String
+  /// "gpt" | "gemini"
+  provider        String
+  modelId         String
+  title           String?
+  titleCandidates Json?
+  /// TipTap/editor HTML body
+  body            String   @db.Text
+  tokenUsage      Json?
+  isSelected      Boolean  @default(false)
+  /// Soft error note when this provider failed (row may be omitted instead)
+  error           String?
+  createdAt       DateTime @default(now())
+  post            Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([postId, isSelected])
+  @@index([postId, provider])
 }
 
 model PostImage {
@@ -169,10 +258,173 @@ model PostImage {
   orderIndex Int      @default(0)
   /// Same non-null value = photo group (max 4 images). Null = standalone.
   groupId    String?
+  /// Optional attribution: { provider, author, authorUrl, pageUrl, license }
+  sourceMeta Json?
   createdAt  DateTime @default(now())
   post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
   @@index([postId, orderIndex])
   @@index([postId, groupId])
+}
+
+model PlanProduct {
+  id                     String         @id @default(cuid())
+  code                   String         @unique
+  name                   String
+  description            String?        @db.Text
+  sortOrder              Int            @default(0)
+  isPublic               Boolean        @default(true)
+  isPurchasable          Boolean        @default(false)
+  brandsLimit            Int
+  sourcePostsPerBrand    Int
+  postsPerDay            Int
+  imagesPerPost          Int
+  generatesPerDay        Int            @default(20)
+  dualGenerationEnabled  Boolean        @default(true)
+  priceMonthlyKrw        Int            @default(0)
+  priceYearlyKrw         Int?
+  currency               String         @default("KRW")
+  taxIncluded            Boolean        @default(true)
+  tossBillingProductCode String?
+  trialDays              Int            @default(0)
+  active                 Boolean        @default(true)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  subscriptions          Subscription[]
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String
+  planProductId      String
+  status             SubscriptionStatus
+  interval           BillingInterval    @default(monthly)
+  tossBillingKey     String?
+  tossCustomerKey    String
+  tossOrderIdPrefix  String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  canceledAt         DateTime?
+  trialEndsAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planProduct        PlanProduct        @relation(fields: [planProductId], references: [id])
+  payments           Payment[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  status         PaymentStatus
+  amountKrw      Int
+  vatKrw         Int           @default(0)
+  currency       String        @default("KRW")
+  tossPaymentKey String?       @unique
+  tossOrderId    String        @unique
+  method         String?
+  receiptUrl     String?
+  failCode       String?
+  failMessage    String?
+  paidAt         DateTime?
+  refundedAt     DateTime?
+  rawWebhookJson Json?
+  createdAt      DateTime      @default(now())
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([subscriptionId])
+}
+
+model Promotion {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  percentOff      Int?
+  amountOffKrw    Int?
+  durationMonths  Int       @default(1)
+  maxRedemptions  Int?
+  redeemedCount   Int       @default(0)
+  applicablePlans String[]
+  activeFrom      DateTime?
+  activeUntil     DateTime?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model UsageDaily {
+  id              String   @id @default(cuid())
+  userId          String
+  day             DateTime
+  postsCreated    Int      @default(0)
+  generates       Int      @default(0)
+  llmInputTokens  Int      @default(0)
+  llmOutputTokens Int      @default(0)
+  imagesUploaded  Int      @default(0)
+  estCostKrw      Int      @default(0)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([day])
+}
+
+model ApiUsageDaily {
+  id          String   @id @default(cuid())
+  day         DateTime
+  slot        String
+  requests    Int      @default(0)
+  successes   Int      @default(0)
+  failures    Int      @default(0)
+  inputUnits  Int      @default(0)
+  outputUnits Int      @default(0)
+  estCostKrw  Int      @default(0)
+
+  @@unique([day, slot])
+  @@index([slot, day])
+}
+
+model IntegrationSecret {
+  id              String    @id @default(cuid())
+  slot            String    @unique
+  label           String
+  ciphertext      Bytes
+  iv              Bytes
+  publicConfig    Json
+  enabled         Boolean   @default(true)
+  hintJson        Json?
+  lastVerifiedAt  DateTime?
+  lastVerifyOk    Boolean?
+  lastVerifyError String?
+  updatedById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model AdminSetting {
+  key       String   @id
+  valueJson Json
+  updatedAt DateTime @updatedAt
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  targetType String?
+  targetId   String?
+  beforeJson Json?
+  afterJson  Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([actorId])
 }

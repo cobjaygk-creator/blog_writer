@@ -8,6 +8,20 @@ export type ProductFactCard = {
   caution?: string;
 };
 
+export type WebSearchHit = {
+  title: string;
+  url: string;
+  content: string;
+  score?: number;
+  imageUrl?: string;
+};
+
+export type ReviewTheme = {
+  theme: string;
+  sentiment?: string;
+  sourceCount: number;
+};
+
 const PRODUCTISH =
   /(바디킷|머플러|썬팅|블랙박스|루프|하이리무진|페이스리프트|범퍼|그릴|매트|방음|튜닝|킷|램프|스포일러)/i;
 
@@ -220,6 +234,107 @@ async function collectSearchSnippets(query: string): Promise<string[]> {
       .filter((s) => s.length > 40)
       .slice(0, 5);
     return snippets;
+  } catch {
+    return [];
+  }
+}
+
+/** Structured web search hits (Tavily preferred, DuckDuckGo fallback). */
+export async function collectSearchHits(
+  query: string,
+  maxResults = 5,
+  options?: { includeImages?: boolean },
+): Promise<WebSearchHit[]> {
+  const tavilyKey = process.env.TAVILY_API_KEY?.trim();
+  if (tavilyKey) {
+    try {
+      const res = await fetchWithTimeout(
+        "https://api.tavily.com/search",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            api_key: tavilyKey,
+            query,
+            max_results: maxResults,
+            search_depth: "basic",
+            include_images: Boolean(options?.includeImages),
+          }),
+        },
+        15_000,
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          results?: Array<{
+            title?: string;
+            content?: string;
+            url?: string;
+            score?: number;
+          }>;
+          images?: Array<string | { url?: string }>;
+        };
+        const gallery = (data.images || [])
+          .map((img) => (typeof img === "string" ? img : img.url || ""))
+          .filter((u) => /^https?:\/\//i.test(u));
+        const hits: WebSearchHit[] = [];
+        for (const [i, r] of (data.results || []).entries()) {
+          const url = typeof r.url === "string" ? r.url.trim() : "";
+          const title = typeof r.title === "string" ? r.title.trim() : "";
+          if (!url || !title) continue;
+          hits.push({
+            title,
+            url,
+            content: typeof r.content === "string" ? r.content.trim() : "",
+            score: typeof r.score === "number" ? r.score : undefined,
+            imageUrl: gallery[i] || undefined,
+          });
+          if (hits.length >= maxResults) break;
+        }
+        if (options?.includeImages) {
+          const primaryUrl = hits[0]?.url;
+          for (const img of gallery) {
+            if (hits.some((h) => h.imageUrl === img)) continue;
+            hits.push({
+              title: hits[0]?.title || query,
+              url: primaryUrl || img,
+              content: "",
+              imageUrl: img,
+            });
+          }
+        }
+        return hits.slice(
+          0,
+          Math.max(maxResults, options?.includeImages ? 12 : maxResults),
+        );
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  try {
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const res = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        },
+      },
+      15_000,
+    );
+    if (!res.ok) return [];
+    const html = await res.text();
+    const snippets = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi)]
+      .map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+      .filter((s) => s.length > 40)
+      .slice(0, maxResults);
+    return snippets.map((content, i) => ({
+      title: `${query} (${i + 1})`,
+      url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+      content,
+    }));
   } catch {
     return [];
   }

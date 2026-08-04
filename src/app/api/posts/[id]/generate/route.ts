@@ -3,19 +3,25 @@ import { z } from "zod";
 
 import { getOwnedPost, jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
 import { toEditorHtml } from "@/lib/content";
+import { ensureMinimalStyleProfile } from "@/lib/default-theme";
+import { generateDraftsInParallel } from "@/lib/dual-draft";
 import { imagesToSlots } from "@/lib/image-slots";
 import { resolveCaptionTone } from "@/lib/caption-tones";
-import { generateBlogDraft } from "@/lib/llm";
+import { providerDisplayLabel } from "@/lib/llm-providers";
+import { assertCanGenerate } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
 import { ensurePostProductFacts } from "@/lib/post-product";
 import { findSimilarSources } from "@/lib/similar-sources";
 import { normalizeTraitsJson } from "@/lib/style-traits";
+import { TOPIC_LENGTHS } from "@/lib/topic-length";
+import { recordUserUsage } from "@/lib/usage-meter";
 import { Prisma } from "@prisma/client";
 
 const generateSchema = z.object({
   keyword: z.string().trim().min(1).max(120).optional(),
   productHighlights: z.string().trim().max(2000).optional().nullable(),
   captionTone: z.string().trim().min(1).max(200).optional().nullable(),
+  length: z.enum(TOPIC_LENGTHS).optional(),
 });
 
 type Params = { params: Promise<{ id: string }> };
@@ -23,6 +29,9 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(request: Request, { params }: Params) {
   const { userId, error } = await requireUserId();
   if (error) return error;
+
+  const genLimit = await assertCanGenerate(userId!);
+  if (genLimit) return genLimit;
 
   const { id } = await params;
   const post = await getOwnedPost(id, userId!);
@@ -64,11 +73,14 @@ export async function POST(request: Request, { params }: Params) {
     });
   }
 
+  // --- Context assembly (ONCE for both providers) ---
+  console.info("[generate] assembling shared draft context");
+  await ensureMinimalStyleProfile(post.brandId);
   const styleProfile = await prisma.styleProfile.findUnique({
     where: { brandId: post.brandId },
   });
   if (!styleProfile) {
-    return jsonError("스타일 프로필이 없습니다. 먼저 문체를 학습하세요.", 400);
+    return jsonError("스타일 프로필을 준비하지 못했습니다.", 400);
   }
   const brandTone = normalizeTraitsJson(styleProfile.traitsJson).tone;
   const voiceTone = resolveCaptionTone(captionTone, brandTone);
@@ -98,7 +110,10 @@ export async function POST(request: Request, { params }: Params) {
         }
       : {
           type: "group" as const,
-          images: slot.images.map((img) => ({ imageUrl: img.imageUrl, caption: img.caption })),
+          images: slot.images.map((img) => ({
+            imageUrl: img.imageUrl,
+            caption: img.caption,
+          })),
         },
   );
 
@@ -134,47 +149,144 @@ export async function POST(request: Request, { params }: Params) {
     3,
   ).map((s) => ({ title: s.title, excerpt: s.excerpt }));
 
-  let draft;
-  try {
-    draft = await generateBlogDraft({
-      brandName: post.brand.name,
-      keyword,
-      styleSummary: styleProfile.summaryText,
-      traitsJson: styleProfile.traitsJson,
-      sampleAnchors,
-      images,
-      imageSlots,
-      similarSources,
-      productFacts,
-      voiceTone,
-    });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "초안 생성에 실패했습니다.";
-    return jsonError(message, 502);
+  const sharedInput = {
+    brandName: post.brand.name,
+    keyword,
+    styleSummary: styleProfile.summaryText,
+    traitsJson: styleProfile.traitsJson,
+    sampleAnchors,
+    images,
+    imageSlots,
+    similarSources,
+    productFacts,
+    voiceTone,
+    length: parsed.data.length || "medium",
+  };
+
+  console.info("[generate] context ready — calling GPT + Gemini in parallel");
+  const parallel = await generateDraftsInParallel(sharedInput);
+  const successes = parallel.filter((d) => !d.error && d.body.trim());
+
+  if (!successes.length) {
+    return jsonError("두 provider 모두 초안 생성에 실패했습니다.", 502);
   }
 
-  const bodyHtml = toEditorHtml(draft.body, images, slotImages);
+  const tokenIn = successes.reduce((s, d) => s + (d.tokenUsage?.input || 0), 0);
+  const tokenOut = successes.reduce((s, d) => s + (d.tokenUsage?.output || 0), 0);
+  await recordUserUsage(userId!, {
+    generates: 1,
+    llmInputTokens: tokenIn,
+    llmOutputTokens: tokenOut,
+  }).catch(() => undefined);
 
+  // Replace previous candidate drafts
+  await prisma.postDraft.deleteMany({ where: { postId: id } });
+
+  const savedDrafts = [];
+  for (const d of successes) {
+    const bodyHtml = toEditorHtml(d.body, images, slotImages);
+    const row = await prisma.postDraft.create({
+      data: {
+        postId: id,
+        provider: d.provider,
+        modelId: d.modelId,
+        title: d.title,
+        titleCandidates: d.titleCandidates,
+        body: bodyHtml,
+        tokenUsage: d.tokenUsage ?? undefined,
+        isSelected: false,
+      },
+    });
+    savedDrafts.push({
+      id: row.id,
+      provider: row.provider,
+      modelId: row.modelId,
+      title: row.title,
+      titleCandidates: row.titleCandidates,
+      body: row.body,
+      isSelected: row.isSelected,
+      createdAt: row.createdAt,
+    });
+  }
+
+  const needsSelection = savedDrafts.length >= 2;
+
+  // Single success → auto-select and sync to Post
+  if (!needsSelection) {
+    const only = savedDrafts[0];
+    await prisma.postDraft.update({
+      where: { id: only.id },
+      data: { isSelected: true },
+    });
+    const updated = await prisma.post.update({
+      where: { id },
+      data: {
+        keyword,
+        productHighlights,
+        captionTone,
+        title: only.title,
+        titleCandidates: only.titleCandidates ?? undefined,
+        body: only.body,
+        status: "draft",
+      },
+      include: {
+        images: { orderBy: { orderIndex: "asc" } },
+        brand: { select: { id: true, name: true } },
+        drafts: { orderBy: { createdAt: "asc" } },
+      },
+    });
+
+    return NextResponse.json({
+      post: updated,
+      needsSelection: false,
+      drafts: [
+        {
+          ...only,
+          isSelected: true,
+          label: providerDisplayLabel(0),
+        },
+      ],
+      productFacts,
+      meta: {
+        dual: true,
+        succeeded: successes.map((s) => s.provider),
+        failed: parallel
+          .filter((d) => d.error)
+          .map((d) => ({ provider: d.provider, error: d.error || "실패" })),
+      },
+    });
+  }
+
+  // Two successes → keep Post fields except keyword/tone; body waits for selection
   const updated = await prisma.post.update({
     where: { id },
     data: {
       keyword,
       productHighlights,
       captionTone,
-      title: draft.title,
-      titleCandidates: draft.titleCandidates,
-      body: bodyHtml,
       status: "draft",
     },
     include: {
       images: { orderBy: { orderIndex: "asc" } },
       brand: { select: { id: true, name: true } },
+      drafts: { orderBy: { createdAt: "asc" } },
     },
   });
 
   return NextResponse.json({
     post: updated,
-    meta: draft.meta,
+    needsSelection: true,
+    drafts: savedDrafts.map((d, i) => ({
+      ...d,
+      label: providerDisplayLabel(i),
+    })),
     productFacts,
+    meta: {
+      dual: true,
+      succeeded: successes.map((s) => s.provider),
+      failed: parallel
+        .filter((d) => d.error)
+        .map((d) => ({ provider: d.provider, error: d.error || "실패" })),
+    },
   });
 }

@@ -48,7 +48,7 @@ export default function RegisterPage() {
   return (
     <main className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-6 py-16">
       <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">회원가입</h1>
-      <p className="mt-2 text-sm text-zinc-600">업체별 문체 학습 후 블로그 초안을 만듭니다.</p>
+      <p className="mt-2 text-sm text-zinc-600">테마별 문체 학습 후 블로그 초안을 만듭니다.</p>
       <form onSubmit={onSubmit} className="mt-8 space-y-4">
         <Label>
           <span>이메일</span>

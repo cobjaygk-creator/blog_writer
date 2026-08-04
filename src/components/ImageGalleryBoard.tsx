@@ -664,7 +664,7 @@ function ParagraphThumbs({
               type="button"
               title="이 사진만 삭제"
               disabled={busy === `del-${image.id}`}
-              className="absolute right-1 top-1 hidden rounded bg-black/70 px-1.5 text-[10px] text-white group-hover:block"
+              className="absolute right-1 top-1 rounded bg-black/70 px-1.5 text-[10px] text-white"
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove(image.id);

@@ -21,7 +21,7 @@ export async function POST(request: Request, { params }: Params) {
 
   const { id } = await params;
   const owned = await getOwnedBrand(id, userId!);
-  if (!owned) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!owned) return jsonError("테마를 찾을 수 없습니다.", 404);
 
   const { body, error: bodyError } = await parseJsonBody(request);
   if (bodyError) return bodyError;
@@ -39,6 +39,9 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const remaining = await getRemainingSourceSlots(userId!, id);
+  if (remaining === "suspended") {
+    return jsonError("계정이 정지되어 있습니다. 고객센터에 문의해 주세요.", 403);
+  }
   const wanted = Math.min(parsed.data.targetCount ?? BULK_IMPORT_TARGET, BULK_IMPORT_TARGET);
   const slotCap = remaining === null ? wanted : Math.min(wanted, remaining);
   if (slotCap <= 0) {

@@ -28,7 +28,7 @@ export async function GET(_request: Request, { params }: Params) {
     },
   });
 
-  if (!brand) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!brand) return jsonError("테마를 찾을 수 없습니다.", 404);
   return NextResponse.json({ brand });
 }
 
@@ -38,14 +38,14 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const { id } = await params;
   const owned = await getOwnedBrand(id, userId!);
-  if (!owned) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!owned) return jsonError("테마를 찾을 수 없습니다.", 404);
 
   const { body, error: bodyError } = await parseJsonBody(request);
   if (bodyError) return bodyError;
 
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
-    return jsonError("업체 이름(1–80자)이 필요합니다.", 400);
+    return jsonError("테마 이름(1–80자)이 필요합니다.", 400);
   }
 
   const brand = await prisma.brand.update({
@@ -62,7 +62,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
   const { id } = await params;
   const owned = await getOwnedBrand(id, userId!);
-  if (!owned) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!owned) return jsonError("테마를 찾을 수 없습니다.", 404);
 
   await prisma.brand.delete({ where: { id } });
   return NextResponse.json({ ok: true });

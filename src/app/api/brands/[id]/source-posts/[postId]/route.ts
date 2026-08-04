@@ -11,7 +11,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
   const { id, postId } = await params;
   const owned = await getOwnedBrand(id, userId!);
-  if (!owned) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!owned) return jsonError("테마를 찾을 수 없습니다.", 404);
 
   const sourcePost = await prisma.sourcePost.findFirst({
     where: { id: postId, brandId: id },

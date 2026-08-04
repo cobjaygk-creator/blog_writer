@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { buildNewCutDeepLink } from "@/lib/newcut";
+import { postStatusLabel } from "@/lib/post-status";
 import { normalizeExtendedTraits } from "@/lib/style-traits";
 
 type SourcePost = {
@@ -216,7 +217,7 @@ export function BrandWorkspace({
   }
 
   async function deleteBrand() {
-    if (!confirm("업체를 삭제하면 원문·스타일·포스트가 모두 삭제됩니다. 계속할까요?")) return;
+    if (!confirm("테마를 삭제하면 원문·스타일·글이 모두 삭제됩니다. 계속할까요?")) return;
     setBusy("delete");
     const res = await fetch(`/api/brands/${brandId}`, { method: "DELETE" });
     setBusy(null);
@@ -237,7 +238,7 @@ export function BrandWorkspace({
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>업체 정보</CardTitle>
+          <CardTitle>테마 정보</CardTitle>
           <div className="flex gap-2">
             <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
               <Button type="button" variant="outline" size="sm">
@@ -347,7 +348,7 @@ export function BrandWorkspace({
                     rows={8}
                     value={rawText}
                     onChange={(e) => setRawText(e.target.value)}
-                    placeholder="업체 톤이 잘 드러나는 글을 붙여넣으세요 (20자 이상)"
+                    placeholder="테마 톤이 잘 드러나는 글을 붙여넣으세요 (20자 이상)"
                   />
                 </Label>
               )}
@@ -422,7 +423,7 @@ export function BrandWorkspace({
               <p className="whitespace-pre-wrap leading-6 text-zinc-800">{style.summaryText}</p>
               <StyleTraitsView traits={style.traitsJson} />
               <p className="text-xs text-zinc-500">
-                학습이 끝나면 상단 메뉴의 <strong>포스트 등록</strong>에서 이 업체 문체로 글을 만들 수 있습니다.
+                학습이 끝나면 상단 메뉴의 <strong>새 글</strong>에서 이 테마 문체로 글을 만들 수 있습니다.
               </p>
             </div>
           )}
@@ -451,7 +452,7 @@ export function BrandWorkspace({
           {style ? (
             <Link href={`/posts/new?brandId=${brandId}`}>
               <Button type="button" size="sm">
-                포스트 등록
+                새 글
               </Button>
             </Link>
           ) : null}
@@ -459,10 +460,10 @@ export function BrandWorkspace({
         <CardContent className="space-y-3">
           {style ? (
             <p className="text-sm text-zinc-600">
-              문체 학습이 완료되었습니다. 포스트 등록에서 이 업체를 선택해 새 글을 만드세요.
+              문체 학습이 완료되었습니다. 새 글에서 이 테마를 선택해 글을 만드세요.
             </p>
           ) : (
-            <p className="text-sm text-amber-700">샘플 원문을 넣고 문체 학습을 마치면 포스트를 등록할 수 있습니다.</p>
+            <p className="text-sm text-amber-700">샘플 원문을 넣고 문체 학습을 마치면 글을 만들 수 있습니다.</p>
           )}
           {posts.length > 0 ? (
             <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200">
@@ -471,12 +472,12 @@ export function BrandWorkspace({
                   <Link href={`/posts/${post.id}`} className="font-medium text-zinc-900 hover:underline">
                     {post.title || post.keyword || "(제목 없음)"}
                   </Link>
-                  <Badge>{post.status}</Badge>
+                  <Badge>{postStatusLabel(post.status)}</Badge>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-zinc-500">이 업체로 만든 포스트는 아직 없습니다.</p>
+            <p className="text-sm text-zinc-500">이 테마로 만든 글은 아직 없습니다.</p>
           )}
         </CardContent>
       </Card>

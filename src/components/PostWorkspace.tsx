@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ImageGalleryBoard } from "@/components/ImageGalleryBoard";
 import { ImageUploadDropzone } from "@/components/ImageUploadDropzone";
@@ -21,7 +21,13 @@ import {
 } from "@/lib/caption-tones";
 import { attachToSlotLayout, imagesToSlots } from "@/lib/image-slots";
 import { buildNewCutDeepLink } from "@/lib/newcut";
+import { postStatusLabel } from "@/lib/post-status";
 import { applyTemplateToBody, type TemplateKind } from "@/lib/templates";
+import {
+  TOPIC_LENGTHS,
+  TOPIC_LENGTH_PRESETS,
+  type TopicLength,
+} from "@/lib/topic-length";
 
 type PostImage = {
   id: string;
@@ -38,9 +44,21 @@ type BrandTemplateOption = {
   html: string;
 };
 
+type CandidateDraft = {
+  id: string;
+  provider: string;
+  modelId?: string;
+  title: string | null;
+  titleCandidates?: unknown;
+  body: string;
+  isSelected?: boolean;
+  label?: string;
+};
+
 type PostData = {
   id: string;
   brandId: string;
+  mode?: string | null;
   title: string | null;
   titleCandidates: unknown;
   body: string | null;
@@ -52,6 +70,7 @@ type PostData = {
   footerTemplateId?: string | null;
   images: PostImage[];
   brand: { id: string; name: string };
+  drafts?: CandidateDraft[];
 };
 
 function imageInputs(images: PostImage[]) {
@@ -76,6 +95,7 @@ export function PostWorkspace({
   const [productHighlights, setProductHighlights] = useState(
     initialPost.productHighlights || "",
   );
+  const [draftLength, setDraftLength] = useState<TopicLength>("medium");
   const [title, setTitle] = useState(initialPost.title || "");
   const [body, setBody] = useState(() =>
     toEditorHtml(
@@ -91,6 +111,41 @@ export function PostWorkspace({
   const [busy, setBusy] = useState<string | null>(null);
   const [editorTab, setEditorTab] = useState<"edit" | "preview">("edit");
   const [editorRevision, setEditorRevision] = useState(0);
+  const [candidateDrafts, setCandidateDrafts] = useState<CandidateDraft[]>(() => {
+    const drafts = initialPost.drafts || [];
+    const unselected = drafts.filter((d) => d.body?.trim() && !d.isSelected);
+    if (unselected.length >= 2 && !initialPost.body?.trim()) {
+      return unselected.map((d, i) => ({
+        ...d,
+        label: d.label || (i === 0 ? "버전 A" : "버전 B"),
+      }));
+    }
+    return [];
+  });
+  const [needsSelection, setNeedsSelection] = useState(
+    () => (initialPost.drafts || []).filter((d) => d.body?.trim() && !d.isSelected).length >= 2 &&
+      !initialPost.body?.trim(),
+  );
+  const [selectingDraftId, setSelectingDraftId] = useState<string | null>(null);
+  const [dualFailNotice, setDualFailNotice] = useState<string | null>(null);
+  const [snapshotBeforeCompare, setSnapshotBeforeCompare] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const prevBusyRef = useRef(busy);
+
+  useEffect(() => {
+    const wasGenerating = prevBusyRef.current === "generate";
+    prevBusyRef.current = busy;
+    if (wasGenerating && busy === null) {
+      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (needsSelection) {
+      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [busy, needsSelection]);
 
   const headerTemplates = useMemo(
     () => templates.filter((t) => t.kind === "header"),
@@ -116,14 +171,7 @@ export function PostWorkspace({
 
   const toneOptions = useMemo(() => captionToneOptions(brandTone), [brandTone]);
 
-  const statusLabel =
-    post.status === "published"
-      ? "올림 완료"
-      : post.status === "archived"
-        ? "보관됨"
-        : post.status === "draft"
-          ? "초안"
-          : "수집 중";
+  const statusLabel = postStatusLabel(post.status);
 
   function applyBodyHtml(html: string) {
     const next = ensureImagesInHtml(html, imageInputs(post.images), {
@@ -308,9 +356,20 @@ export function PostWorkspace({
   }
 
   async function generateDraft() {
+    if (needsSelection || body.trim()) {
+      const ok = window.confirm(
+        "새 초안을 만들면 지금 비교·편집 중인 내용이 바뀔 수 있어요. 계속할까요?",
+      );
+      if (!ok) return;
+    }
+
+    setSnapshotBeforeCompare({ title, body });
     setBusy("generate");
     setError(null);
     setCopyMsg(null);
+    setDualFailNotice(null);
+    setNeedsSelection(false);
+    setCandidateDrafts([]);
     const res = await fetch(`/api/posts/${post.id}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -318,16 +377,24 @@ export function PostWorkspace({
         keyword: keyword || undefined,
         productHighlights: productHighlights.trim() || null,
         captionTone: captionTone || BRAND_CAPTION_TONE,
+        length: draftLength,
       }),
     });
-    const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      post?: PostData;
+      needsSelection?: boolean;
+      drafts?: CandidateDraft[];
+      meta?: {
+        failed?: Array<{ provider: string; error: string } | string>;
+      };
+    };
     setBusy(null);
     if (!res.ok || !data.post) {
       setError(data.error || "초안 생성 실패");
       return;
     }
     setPost(data.post);
-    setTitle(data.post.title || "");
     setKeyword(data.post.keyword || "");
     if (data.post.captionTone !== undefined) {
       setCaptionTone(data.post.captionTone || BRAND_CAPTION_TONE);
@@ -335,11 +402,78 @@ export function PostWorkspace({
     if (data.post.productHighlights !== undefined) {
       setProductHighlights(data.post.productHighlights || "");
     }
+
+    const failed = data.meta?.failed || [];
+    if (failed.length) {
+      const detail = failed
+        .map((f) => (typeof f === "string" ? f : `${f.provider}: ${f.error}`))
+        .join(" · ");
+      setDualFailNotice(`일부 버전 생성에 실패해 하나만 준비됐어요. (${detail})`);
+    } else {
+      setDualFailNotice(null);
+    }
+
+    if (data.needsSelection && data.drafts && data.drafts.length >= 2) {
+      setNeedsSelection(true);
+      setCandidateDrafts(data.drafts);
+      setTitle("");
+      setBody("");
+      return;
+    }
+
+    setNeedsSelection(false);
+    setCandidateDrafts([]);
+    setSnapshotBeforeCompare(null);
+    setTitle(data.post.title || "");
     applyBodyHtml(
       toEditorHtml(data.post.body || "", imageInputs(data.post.images), data.post.images),
     );
     setEditorTab("edit");
     router.refresh();
+  }
+
+  async function selectDraft(draftId: string) {
+    setBusy("select-draft");
+    setSelectingDraftId(draftId);
+    setError(null);
+    const res = await fetch(`/api/posts/${post.id}/select-draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftId }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      post?: PostData;
+    };
+    setBusy(null);
+    setSelectingDraftId(null);
+    if (!res.ok || !data.post) {
+      setError(data.error || "초안 선택에 실패했습니다.");
+      return;
+    }
+    setPost(data.post);
+    setNeedsSelection(false);
+    setCandidateDrafts([]);
+    setSnapshotBeforeCompare(null);
+    setDualFailNotice(null);
+    setTitle(data.post.title || "");
+    applyBodyHtml(
+      toEditorHtml(data.post.body || "", imageInputs(data.post.images), data.post.images),
+    );
+    setEditorTab("edit");
+    router.refresh();
+  }
+
+  function dismissCompare() {
+    setNeedsSelection(false);
+    setCandidateDrafts([]);
+    if (snapshotBeforeCompare) {
+      setTitle(snapshotBeforeCompare.title);
+      setBody(snapshotBeforeCompare.body);
+      setEditorRevision((n) => n + 1);
+    }
+    setSnapshotBeforeCompare(null);
+    setEditorTab("edit");
   }
 
   async function syncImagesIntoBody() {
@@ -537,7 +671,7 @@ export function PostWorkspace({
             </Link>
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900">
-            {post.title || "포스트 작업실"}
+            {post.title || "글 편집"}
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -561,8 +695,14 @@ export function PostWorkspace({
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {dualFailNotice ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {dualFailNotice}
+        </p>
+      ) : null}
 
-      <Card>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+      <Card className="h-fit order-2 lg:order-1 lg:sticky lg:top-4">
         <CardHeader>
           <CardTitle>사진 & 장면 키워드</CardTitle>
         </CardHeader>
@@ -596,6 +736,22 @@ export function PostWorkspace({
               초안 생성 시 이 말투로 문장을 씁니다. 이모지·강조·색·글자 크기는 학습 스타일을 더 적극 반영합니다.
             </span>
           </Label>
+          {post.mode !== "topic" ? (
+            <Label>
+              <span>글 길이</span>
+              <select
+                className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+                value={draftLength}
+                onChange={(e) => setDraftLength(e.target.value as TopicLength)}
+              >
+                {TOPIC_LENGTHS.map((id) => (
+                  <option key={id} value={id}>
+                    {TOPIC_LENGTH_PRESETS[id].label} — {TOPIC_LENGTH_PRESETS[id].hint}
+                  </option>
+                ))}
+              </select>
+            </Label>
+          ) : null}
           <Label>
             <span>제품 특장점 (선택)</span>
             <Textarea
@@ -627,10 +783,10 @@ export function PostWorkspace({
                 장면 키워드 비어 있음 {emptySceneKeywordCount}단락
               </Badge>
             ) : null}
-            <Button type="button" onClick={generateDraft} disabled={busy === "generate" || !keyword.trim()}>
-              {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
+            <Button type="button" onClick={() => void generateDraft()} disabled={busy === "generate" || !keyword.trim()}>
+              {busy === "generate" ? "두 버전 생성 중…" : "초안 생성"}
             </Button>
-            {post.images.length > 0 && body.trim() ? (
+            {post.images.length > 0 && body.trim() && !needsSelection ? (
               <Button
                 type="button"
                 variant="outline"
@@ -641,10 +797,82 @@ export function PostWorkspace({
               </Button>
             ) : null}
           </div>
+          <p className="text-xs text-zinc-500">
+            생성 시 두 버전을 동시에 만들고, 마음에 드는 쪽을 고를 수 있어요.
+          </p>
         </CardContent>
       </Card>
 
-      <Card>
+      {needsSelection && candidateDrafts.length >= 2 ? (
+        <Card ref={resultRef} className="order-1 lg:order-2">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>초안 비교</CardTitle>
+              <p className="mt-1 text-sm text-zinc-600">
+                마음에 드는 버전을 선택하면 편집기로 이어집니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy === "generate"}
+                onClick={() => void generateDraft()}
+              >
+                다시 생성
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy === "select-draft"}
+                onClick={dismissCompare}
+              >
+                {snapshotBeforeCompare?.body.trim() ? "이전 본문 유지" : "비교 닫기"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2">
+              {candidateDrafts.map((draft) => (
+                <div
+                  key={draft.id}
+                  className="flex flex-col rounded-xl border border-zinc-200 bg-white"
+                >
+                  <div className="border-b border-zinc-100 px-4 py-3">
+                    <p className="text-sm font-semibold text-zinc-900">
+                      {draft.label || "버전"}
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-sm text-zinc-700">
+                      {draft.title || "(제목 없음)"}
+                    </p>
+                  </div>
+                  <div
+                    className="rich-doc max-h-[28rem] flex-1 overflow-y-auto px-4 py-3 text-sm"
+                    dangerouslySetInnerHTML={{
+                      __html:
+                        draft.body ||
+                        '<p class="text-zinc-500">미리볼 본문이 없습니다.</p>',
+                    }}
+                  />
+                  <div className="border-t border-zinc-100 p-3">
+                    <Button
+                      type="button"
+                      className="w-full"
+                      disabled={busy === "select-draft"}
+                      onClick={() => void selectDraft(draft.id)}
+                    >
+                      {selectingDraftId === draft.id ? "선택 중…" : "이 버전 선택"}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+      <Card ref={resultRef} className="order-1 lg:order-2">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>초안 편집기</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
@@ -822,6 +1050,8 @@ export function PostWorkspace({
           </form>
         </CardContent>
       </Card>
+      )}
+      </div>
     </div>
   );
 }

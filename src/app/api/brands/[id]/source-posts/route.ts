@@ -23,7 +23,7 @@ export async function GET(_request: Request, { params }: Params) {
 
   const { id } = await params;
   const owned = await getOwnedBrand(id, userId!);
-  if (!owned) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!owned) return jsonError("테마를 찾을 수 없습니다.", 404);
 
   const sourcePosts = await prisma.sourcePost.findMany({
     where: { brandId: id },
@@ -39,7 +39,7 @@ export async function POST(request: Request, { params }: Params) {
 
   const { id } = await params;
   const owned = await getOwnedBrand(id, userId!);
-  if (!owned) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!owned) return jsonError("테마를 찾을 수 없습니다.", 404);
 
   const { body, error: bodyError } = await parseJsonBody(request);
   if (bodyError) return bodyError;

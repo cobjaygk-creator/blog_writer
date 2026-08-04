@@ -148,7 +148,7 @@ export function BrandTemplateWorkspace({ brandId, brandName, initialTemplates }:
           </p>
         </div>
         <Link href={`/brands/${brandId}`} className="text-sm text-zinc-500 hover:text-zinc-800">
-          ← 업체 학습
+          ← 테마 학습
         </Link>
       </div>
 

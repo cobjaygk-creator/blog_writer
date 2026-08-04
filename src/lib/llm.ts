@@ -15,6 +15,19 @@ import {
   stripStyleMarkers,
   type StyleTraits,
 } from "@/lib/style-traits";
+import {
+  chatCompletionWithProvider,
+  type DraftProvider,
+  type DraftTokenUsage,
+  getDraftProviderConfig,
+  isDraftProviderConfigured,
+} from "@/lib/llm-providers";
+import { getTopicLengthPreset, type TopicLength } from "@/lib/topic-length";
+import {
+  TYPE_SIZE_BODY,
+  TYPE_SIZE_EMPHASIS,
+  TYPE_SIZE_HEADING,
+} from "@/lib/typography-rhythm";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -24,61 +37,97 @@ type ChatMessage = {
 type ChatResult = {
   text: string;
   usedFallback: boolean;
+  tokenUsage?: DraftTokenUsage;
+  modelId?: string;
 };
 
 function getLlmConfig() {
+  // Prefer LLM_GPT_*; fall back to legacy LLM_* for style-learn and other single-provider calls
+  const gpt = getDraftProviderConfig("gpt");
   return {
-    apiKey: process.env.LLM_API_KEY?.trim() || "",
-    baseUrl: (process.env.LLM_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/$/, ""),
-    model: process.env.LLM_MODEL?.trim() || "gpt-4o-mini",
+    apiKey: gpt.apiKey,
+    baseUrl: gpt.baseUrl,
+    model: gpt.model,
   };
 }
 
 export async function chatCompletion(
   messages: ChatMessage[],
-  options?: { temperature?: number; json?: boolean; maxTokens?: number },
+  options?: {
+    temperature?: number;
+    json?: boolean;
+    maxTokens?: number;
+    draftProvider?: DraftProvider;
+  },
 ): Promise<ChatResult> {
-  const { apiKey, baseUrl, model } = getLlmConfig();
+  const provider = options?.draftProvider || "gpt";
 
-  if (!apiKey) {
+  if (!(await isDraftProviderConfigured(provider)) && !getLlmConfig().apiKey) {
     if (!allowFallback()) {
-      throw new Error("LLM_API_KEY가 설정되지 않았습니다.");
+      throw new Error("LLM API 키가 설정되지 않았습니다.");
     }
-    return { text: "", usedFallback: true };
+    return { text: "", usedFallback: true, modelId: getDraftProviderConfig(provider).model };
   }
 
-  const response = await fetchWithTimeout(
-    `${baseUrl}/chat/completions`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+  // Style-learn / generic calls: use gpt config (legacy LLM_* supported)
+  if (!options?.draftProvider) {
+    const { apiKey, baseUrl, model } = getLlmConfig();
+    if (!apiKey) {
+      if (!allowFallback()) {
+        throw new Error("LLM_API_KEY가 설정되지 않았습니다.");
+      }
+      return { text: "", usedFallback: true, modelId: model };
+    }
+    const response = await fetchWithTimeout(
+      `${baseUrl}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: options?.temperature ?? 0.4,
+          max_tokens: options?.maxTokens ?? llmMaxTokens(),
+          response_format: options?.json ? { type: "json_object" } : undefined,
+          messages,
+        }),
       },
-      body: JSON.stringify({
-        model,
-        temperature: options?.temperature ?? 0.4,
-        max_tokens: options?.maxTokens ?? llmMaxTokens(),
-        response_format: options?.json ? { type: "json_object" } : undefined,
-        messages,
-      }),
-    },
-    llmTimeoutMs(),
-  );
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`LLM 요청 실패 (${response.status}): ${detail.slice(0, 200)}`);
+      llmTimeoutMs(),
+    );
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`LLM 요청 실패 (${response.status}): ${detail.slice(0, 200)}`);
+    }
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const text = data.choices?.[0]?.message?.content?.trim() ?? "";
+    if (!text) throw new Error("LLM 응답이 비어 있습니다.");
+    return {
+      text,
+      usedFallback: false,
+      modelId: model,
+      tokenUsage:
+        typeof data.usage?.prompt_tokens === "number" ||
+        typeof data.usage?.completion_tokens === "number"
+          ? {
+              input: Number(data.usage?.prompt_tokens || 0),
+              output: Number(data.usage?.completion_tokens || 0),
+            }
+          : undefined,
+    };
   }
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+  const result = await chatCompletionWithProvider(provider, messages, options);
+  return {
+    text: result.text,
+    usedFallback: result.usedFallback,
+    modelId: result.modelId,
+    tokenUsage: result.tokenUsage,
   };
-  const text = data.choices?.[0]?.message?.content?.trim() ?? "";
-  if (!text) {
-    throw new Error("LLM 응답이 비어 있습니다.");
-  }
-  return { text, usedFallback: false };
 }
 
 async function withProviderFallback<T>(
@@ -267,6 +316,9 @@ export type DraftGenerateResult = {
   meta: {
     usedFallback: boolean;
     provider: "llm" | "fallback";
+    draftProvider?: DraftProvider;
+    modelId?: string;
+    tokenUsage?: DraftTokenUsage;
   };
 };
 
@@ -283,11 +335,12 @@ body 작성 규칙:
 4) 강조·색 적극 사용(필수):
    - 제품명·스펙·핵심 동사마다 <strong> 또는 <span style="color:#HEX"> (colorPalette 순환)
    - 단락마다 최소 1회 색상/강조. 회색 밋밋한 본문만 쓰지 말 것
-5) 글자 크기 적극 사용(필수) — 반드시 <span style="font-size:..."> 안에 넣으세요 (h2/h3 태그 style은 에디터가 버림):
-   - 소제목: <h2><span style="font-size:22px;color:#HEX">제목 ✨</span></h2>
-   - 소소제목: <h3><span style="font-size:18px;color:#HEX">소제목</span></h3>
-   - 포인트 문장: <p><span style="font-size:18px">...</span></p>
-   - 보조 설명: <p><span style="font-size:15px">...</span></p>
+5) 글자 크기 적극 사용(필수) — typography-rhythm 고정: 본문 ${TYPE_SIZE_BODY} / 강조 ${TYPE_SIZE_EMPHASIS} / 제목 ${TYPE_SIZE_HEADING}.
+   반드시 <span style="font-size:..."> 안에 넣으세요 (h2/h3 태그 style은 에디터가 버림):
+   - 소제목: <h2><span style="font-size:${TYPE_SIZE_HEADING};color:#HEX">제목 ✨</span></h2>
+   - 소소제목: <h3><span style="font-size:${TYPE_SIZE_EMPHASIS};color:#HEX">소제목</span></h3>
+   - 포인트 문장: <p><span style="font-size:${TYPE_SIZE_EMPHASIS}">...</span></p>
+   - 보조 설명: <p><span style="font-size:${TYPE_SIZE_BODY}">...</span></p>
    - 크기·색이 없는 plain <p>만 연속되면 실패로 간주하고 서식을 넣으세요
 6) 사진은 반드시 제공 URL 그대로 사용(변경·생략 금지). 배치 규칙은 아래 "사진 배치"를 절대적으로 따릅니다.
    - [단독] 슬롯: 반드시 세로로 하나씩 <p><img src="URL" alt="장면키워드" style="${SINGLE_IMAGE_STYLE}" /></p> (나란히/그리드 금지)
@@ -325,10 +378,16 @@ export async function generateBlogDraft(input: {
   } | null;
   /** Overrides StyleTraits.tone for this draft (말투). */
   voiceTone?: string | null;
+  /** short | medium | long — target body length */
+  length?: TopicLength | string | null;
+  /** Dual-draft: which provider runs this call (gpt | gemini) */
+  draftProvider?: DraftProvider;
 }): Promise<DraftGenerateResult> {
+  const draftProvider = input.draftProvider || "gpt";
   const traits = normalizeExtendedTraits(input.traitsJson);
   const voiceTone = input.voiceTone?.trim() || traits.tone;
   const draftTraits = { ...traits, tone: voiceTone };
+  const lengthPreset = getTopicLengthPreset(input.length);
   const anchors = input.sampleAnchors
     .map((a, i) => `--- 샘플 ${i + 1} ---\n${a.excerpt}`)
     .join("\n\n");
@@ -354,14 +413,17 @@ export async function generateBlogDraft(input: {
       ? draftTraits.frequentEmojis.join(" ")
       : "🔧 ✨ 👍 🚗 📦 ✅ 🙏";
 
+  let tokenUsage: DraftTokenUsage | undefined;
+  let modelId = getDraftProviderConfig(draftProvider).model;
+
   const { result, usedFallback, provider } = await withProviderFallback(
     async () => {
-      const { text } = await chatCompletion(
+      const chat = await chatCompletion(
         [
           { role: "system", content: DRAFT_SYSTEM },
           {
             role: "user",
-            content: `업체: ${input.brandName}
+            content: `테마: ${input.brandName}
 키워드: ${input.keyword}
 
 이번 글 말투(최우선, 문장체 옵션): ${voiceTone}
@@ -400,6 +462,7 @@ ${sceneKeywords}
 ${imageLines}
 
 요청:
+- 목표 분량: ${lengthPreset.label} — 본문 순수 텍스트 약 ${lengthPreset.targetChars.min}~${lengthPreset.targetChars.max}자 (${lengthPreset.hint}). ${lengthPreset.paragraphsPerSection}.
 - 사실 우선순위: 1) 단락 장면 키워드 2) 제품 팩트 3) 유사 사례 용어·흐름 4) 편집 프로필
 - 모든 문장은 "${voiceTone}" 말투로 쓰세요. opener/closer 스타일을 반영하세요.
 - 장면 키워드를 복붙하지 말고 말투로 풀어 쓰세요. 없는 스펙은 제품 팩트로만 보강.
@@ -407,15 +470,20 @@ ${imageLines}
 - 학습 용어·productMentions·CTA를 자연스럽게 넣고, bannedFluff 표현은 쓰지 마세요.
 - 단락마다: (짧은 시공/제품 문장+이모지+강조) → 이미지 → (키워드+팩트 풀어쓴 1문장, 색/크기 포함).
 - [단독]은 세로 1장씩, [묶음]만 가로 그리드.
-- 제목에도 이모지를 넣으세요.`,
+- 제목에도 이모지를 넣으세요.
+- 목표 분량을 맞추세요. 짧게는 핵심만, 길게는 과정·포인트·마무리를 더 자세히.`,
           },
         ],
         {
           json: true,
           temperature: hasSceneKeywords ? 0.5 : 0.65,
-          maxTokens: Math.max(llmMaxTokens(), 3500),
+          maxTokens: Math.max(llmMaxTokens(), lengthPreset.draftMaxTokens),
+          draftProvider,
         },
       );
+      tokenUsage = chat.tokenUsage;
+      modelId = chat.modelId || modelId;
+      const text = chat.text;
       try {
         const parsed = JSON.parse(text) as Partial<DraftGenerateResult>;
         const title =
@@ -439,13 +507,19 @@ ${imageLines}
       }
     },
     () => fallbackDraft(input, draftTraits),
-    "draft-generate",
+    `draft-generate:${draftProvider}`,
   );
 
   return {
     ...result,
     body: prepareEditorHtml(applySlotLayoutToHtml(result.body, input.imageSlots)),
-    meta: { usedFallback, provider },
+    meta: {
+      usedFallback,
+      provider,
+      draftProvider,
+      modelId,
+      tokenUsage,
+    },
   };
 }
 

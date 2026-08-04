@@ -30,7 +30,7 @@ export async function POST(_request: Request, { params }: Params) {
 
   const { id, jobId } = await params;
   const owned = await getOwnedBrand(id, userId!);
-  if (!owned) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!owned) return jsonError("테마를 찾을 수 없습니다.", 404);
 
   const job = await prisma.sourceImportJob.findFirst({
     where: { id: jobId, brandId: id },
@@ -49,6 +49,10 @@ export async function POST(_request: Request, { params }: Params) {
 
   for (const { item, index } of pendingIndexes) {
     const remaining = await getRemainingSourceSlots(userId!, id);
+    if (remaining === "suspended") {
+      items[index] = { ...item, status: "skipped", error: "계정 정지" };
+      continue;
+    }
     if (remaining !== null && remaining <= 0) {
       items[index] = { ...item, status: "skipped", error: "원문 한도 초과" };
       continue;

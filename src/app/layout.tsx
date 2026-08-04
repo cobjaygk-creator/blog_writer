@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "blog_writer — AI 블로그 포스트 생성기",
-  description: "업체 문체 학습 후 사진·키워드로 블로그 초안을 생성합니다.",
+  description: "테마 문체 학습 후 사진·키워드로 블로그 초안을 생성합니다.",
 };
 
 export default function RootLayout({

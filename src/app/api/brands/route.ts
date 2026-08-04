@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
-    return jsonError("업체 이름(1–80자)이 필요합니다.", 400);
+    return jsonError("테마 이름(1–80자)이 필요합니다.", 400);
   }
 
   const limitError = await assertCanCreateBrand(userId!);

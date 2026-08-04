@@ -17,7 +17,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const { id } = await params;
   const owned = await getOwnedBrand(id, userId!);
-  if (!owned) return jsonError("업체를 찾을 수 없습니다.", 404);
+  if (!owned) return jsonError("테마를 찾을 수 없습니다.", 404);
 
   const existing = await prisma.styleProfile.findUnique({ where: { brandId: id } });
   if (!existing) return jsonError("스타일 프로필이 없습니다. 먼저 문체를 학습하세요.", 404);

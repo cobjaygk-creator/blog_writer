@@ -18,7 +18,8 @@ export function allowFallback() {
 }
 
 export function llmTimeoutMs() {
-  return envInt("LLM_TIMEOUT_MS", 45_000, 3_000, 180_000);
+  // Topic/worklog drafts often exceed 45s once research + images finish first.
+  return envInt("LLM_TIMEOUT_MS", 120_000, 3_000, 300_000);
 }
 
 export function visionTimeoutMs() {
@@ -46,7 +47,19 @@ export function storageTimeoutMs() {
 }
 
 export function isLlmConfigured() {
-  return Boolean(process.env.LLM_API_KEY?.trim());
+  return Boolean(
+    process.env.LLM_GPT_API_KEY?.trim() ||
+      process.env.LLM_API_KEY?.trim() ||
+      process.env.LLM_GEMINI_API_KEY?.trim(),
+  );
+}
+
+export function isImageGenConfigured() {
+  return Boolean(
+    process.env.IMAGE_GEN_API_KEY?.trim() ||
+      process.env.LLM_API_KEY?.trim() ||
+      process.env.OPENAI_API_KEY?.trim(),
+  );
 }
 
 export function isVisionConfigured() {
@@ -67,9 +80,17 @@ export function getIntegrationsStatus() {
     allowFallback: allowFallback(),
     llm: {
       configured: isLlmConfigured(),
-      model: process.env.LLM_MODEL?.trim() || "gpt-4o-mini",
+      model:
+        process.env.LLM_GPT_MODEL?.trim() ||
+        process.env.LLM_MODEL?.trim() ||
+        "gpt-4o-mini",
       timeoutMs: llmTimeoutMs(),
       maxTokens: llmMaxTokens(),
+      gptConfigured: Boolean(
+        process.env.LLM_GPT_API_KEY?.trim() || process.env.LLM_API_KEY?.trim(),
+      ),
+      geminiConfigured: Boolean(process.env.LLM_GEMINI_API_KEY?.trim()),
+      geminiModel: process.env.LLM_GEMINI_MODEL?.trim() || "gemini-2.0-flash",
     },
     vision: {
       configured: isVisionConfigured(),
@@ -151,11 +172,33 @@ export function detectImageMime(buffer: Buffer): string | null {
 
 export function assertAllowedImage(buffer: Buffer, declaredType: string) {
   const detected = detectImageMime(buffer);
-  if (!detected) {
-    throw new Error("이미지 시그니처가 올바르지 않습니다.");
+  const declared = (declaredType || "").split(";")[0].trim().toLowerCase();
+  const normalizedDeclared =
+    declared === "image/jpg"
+      ? "image/jpeg"
+      : declared === "image/jpeg" ||
+          declared === "image/png" ||
+          declared === "image/webp" ||
+          declared === "image/gif"
+        ? declared
+        : "";
+
+  if (detected) {
+    if (normalizedDeclared && normalizedDeclared !== detected) {
+      throw new Error(
+        `선언된 MIME(${declaredType})과 실제 파일(${detected})이 일치하지 않습니다.`,
+      );
+    }
+    return detected;
   }
-  if (declaredType && declaredType !== detected) {
-    throw new Error(`선언된 MIME(${declaredType})과 실제 파일(${detected})이 일치하지 않습니다.`);
+
+  // News CDNs sometimes deliver image bodies without standard magic bytes.
+  const head = buffer.slice(0, 64).toString("utf8").toLowerCase();
+  const looksHtml =
+    head.includes("<!doctype") || head.includes("<html") || head.includes("<?xml");
+  if (normalizedDeclared && buffer.byteLength >= 2_000 && !looksHtml) {
+    return normalizedDeclared;
   }
-  return detected;
+
+  throw new Error("이미지 시그니처가 올바르지 않습니다.");
 }

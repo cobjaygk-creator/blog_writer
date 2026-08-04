@@ -28,6 +28,9 @@ export const authConfig = {
       if (user) {
         token.sub = user.id;
         token.plan = typeof user.plan === "string" ? user.plan : "free";
+        token.role = typeof (user as { role?: string }).role === "string"
+          ? (user as { role?: string }).role
+          : "user";
       }
       return token;
     },
@@ -35,6 +38,7 @@ export const authConfig = {
       if (session.user) {
         session.user.id = typeof token.sub === "string" ? token.sub : "";
         session.user.plan = typeof token.plan === "string" ? token.plan : "free";
+        session.user.role = typeof token.role === "string" ? token.role : "user";
       }
       return session;
     },

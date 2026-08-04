@@ -51,7 +51,7 @@ export function PostCreateForm({
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!brandId) {
-      setError("학습된 업체를 선택해 주세요.");
+      setError("??? ??? ??? ???.");
       return;
     }
     setBusy(true);
@@ -69,7 +69,7 @@ export function PostCreateForm({
     const data = (await res.json().catch(() => ({}))) as { error?: string; post?: { id: string } };
     setBusy(false);
     if (!res.ok || !data.post) {
-      setError(data.error || "포스트 생성에 실패했습니다.");
+      setError(data.error || "? ??? ??????.");
       return;
     }
     router.push(`/posts/${data.post.id}`);
@@ -79,9 +79,9 @@ export function PostCreateForm({
   if (brands.length === 0) {
     return (
       <div className="space-y-3 text-sm text-zinc-600">
-        <p>먼저 업체를 등록해 주세요.</p>
+        <p>?? ??? ??? ???.</p>
         <Link href="/brands/new">
-          <Button type="button">업체 등록하러 가기</Button>
+          <Button type="button">?? ???? ??</Button>
         </Link>
       </div>
     );
@@ -90,9 +90,9 @@ export function PostCreateForm({
   if (learnedBrands.length === 0) {
     return (
       <div className="space-y-3 text-sm text-zinc-600">
-        <p>문체 학습이 끝난 업체가 없습니다. 샘플 원문으로 학습한 뒤 포스트를 만들 수 있습니다.</p>
+        <p>?? ??? ?? ??? ????. ?? ???? ??? ? ?? ?? ? ????.</p>
         <Link href="/brands">
-          <Button type="button">업체 학습하러 가기</Button>
+          <Button type="button">?? ???? ??</Button>
         </Link>
       </div>
     );
@@ -101,9 +101,9 @@ export function PostCreateForm({
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Label>
-        <span>업체</span>
+        <span>??</span>
         <select
-          className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+          className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus-visible:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/15"
           value={brandId}
           onChange={(e) => {
             setBrandId(e.target.value);
@@ -114,15 +114,15 @@ export function PostCreateForm({
           {learnedBrands.map((brand) => (
             <option key={brand.id} value={brand.id}>
               {brand.name}
-              {brand.styleVersion ? ` (스타일 v${brand.styleVersion})` : ""}
+              {brand.styleVersion ? ` (??? v${brand.styleVersion})` : ""}
             </option>
           ))}
         </select>
       </Label>
       <Label>
-        <span>문장체 (말투)</span>
+        <span>??? (??)</span>
         <select
-          className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+          className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus-visible:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/15"
           value={captionTone}
           onChange={(e) => setCaptionTone(e.target.value)}
         >
@@ -134,34 +134,32 @@ export function PostCreateForm({
         </select>
       </Label>
       <Label>
-        <span>키워드</span>
+        <span>???</span>
         <Input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          placeholder="예: 카니발 페이스리프트 AG바디킷"
+          placeholder="?: ??? ?????? AG???"
           maxLength={120}
         />
       </Label>
       <Label>
-        <span>제품 특장점 (선택)</span>
+        <span>?? ??? (??)</span>
         <Textarea
           rows={4}
           value={productHighlights}
           onChange={(e) => setProductHighlights(e.target.value)}
-          placeholder={"예:\n- 전면 그릴·범퍼 라인 교체\n- 머플러팁 일체형\n- 화이트 바디와 크롬 포인트"}
+          placeholder={"?:\n- ?? ??�?? ?? ??\n- ???? ???\n- ??? ??? ?? ???"}
           maxLength={2000}
         />
         <span className="mt-1 block text-xs font-normal text-zinc-500">
-          비우면 키워드에서 제품을 알 수 있을 때 자동으로 조사합니다. 초안 말투는 문장체 옵션을 따릅니다.
+          ??? ????? ??? ? ? ?? ? ???? ?????. ?? ??? ??? ??? ????.
         </span>
       </Label>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <Button type="submit" disabled={busy || !brandId}>
-        {busy ? "생성 중…" : "포스트 만들기"}
+        {busy ? "?? ??" : "? ???"}
       </Button>
-      <p className="text-xs text-zinc-500">
-        생성 후 사진 업로드·초안 작성 화면으로 이동합니다.
-      </p>
+      <p className="text-xs text-zinc-500">?? ? ?? ???�?? ?? ???? ?????.</p>
     </form>
   );
 }

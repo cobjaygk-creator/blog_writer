@@ -1,0 +1,568 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+
+import { ImageUploadDropzone } from "@/components/ImageUploadDropzone";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { BRAND_CAPTION_TONE, captionToneOptions } from "@/lib/caption-tones";
+import { USE_DEFAULT_THEME_ID } from "@/lib/default-theme";
+import { POST_MODE_META, type PostModeId } from "@/lib/post-modes";
+import {
+  getTopicLengthPreset,
+  TOPIC_LENGTHS,
+  TOPIC_LENGTH_PRESETS,
+  type TopicLength,
+} from "@/lib/topic-length";
+
+export type WizardBrandOption = {
+  id: string;
+  name: string;
+  learned: boolean;
+  brandTone: string | null;
+};
+
+type Step = "mode" | "input" | "generate";
+type GeneratePhase = "create" | "upload" | "generate";
+
+const STEPS: Array<{ id: Step; label: string }> = [
+  { id: "mode", label: "모드" },
+  { id: "input", label: "입력" },
+  { id: "generate", label: "생성 중" },
+];
+
+const MODE_ORDER: PostModeId[] = ["worklog", "topic", "product"];
+
+export function PostWizard({
+  brands,
+  initialBrandId,
+}: {
+  brands: WizardBrandOption[];
+  initialBrandId?: string | null;
+}) {
+  const router = useRouter();
+
+  const defaultBrandId =
+    (initialBrandId && brands.some((b) => b.id === initialBrandId) && initialBrandId) ||
+    brands[0]?.id ||
+    USE_DEFAULT_THEME_ID;
+
+  const [step, setStep] = useState<Step>("mode");
+  const [brandId, setBrandId] = useState(defaultBrandId);
+  const [mode, setMode] = useState<PostModeId | null>(null);
+  const [keyword, setKeyword] = useState("");
+  const [topic, setTopic] = useState("");
+  const [productHighlights, setProductHighlights] = useState("");
+  const [captionTone, setCaptionTone] = useState(BRAND_CAPTION_TONE);
+  const [topicLength, setTopicLength] = useState<TopicLength>("medium");
+  const [imageCount, setImageCount] = useState(
+    getTopicLengthPreset("medium").sectionCount,
+  );
+  const [useAiImages, setUseAiImages] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [statusLine, setStatusLine] = useState("글을 준비하고 있어요");
+  const [phase, setPhase] = useState<GeneratePhase>("create");
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  const [retryPostId, setRetryPostId] = useState<string | null>(null);
+  const [retrySnapshot, setRetrySnapshot] = useState<{
+    mode: PostModeId;
+    brandId: string;
+    imagesUploaded: boolean;
+  } | null>(null);
+
+  const usingDefaultTheme = brands.length === 0 || brandId === USE_DEFAULT_THEME_ID;
+  const selectedBrand = brands.find((b) => b.id === brandId);
+  const toneOptions = useMemo(
+    () => captionToneOptions(selectedBrand?.brandTone),
+    [selectedBrand?.brandTone],
+  );
+
+  function goNextFromMode() {
+    if (!mode) {
+      setError("글 종류를 선택해 주세요.");
+      return;
+    }
+    setError(null);
+    setStep("input");
+  }
+
+  function onTopicLengthChange(length: TopicLength) {
+    setTopicLength(length);
+    setImageCount(getTopicLengthPreset(length).sectionCount);
+  }
+
+  function setPhaseStatus(next: GeneratePhase, upload?: { done: number; total: number }) {
+    setPhase(next);
+    setUploadProgress(upload || null);
+    if (next === "create") setStatusLine("글을 준비하고 있어요");
+    else if (next === "upload") {
+      setStatusLine(
+        upload
+          ? `사진을 올리고 있어요 (${upload.done}/${upload.total})`
+          : "사진을 올리고 있어요",
+      );
+    } else {
+      setStatusLine(
+        mode === "topic"
+          ? "주제 조사·이미지·초안을 만들고 있어요"
+          : "두 버전 초안을 만들고 있어요",
+      );
+    }
+  }
+
+  async function runGenerate() {
+    if (!mode) return;
+
+    if (mode === "topic" && topic.trim().length < 2) {
+      setError("주제를 2자 이상 입력해 주세요.");
+      return;
+    }
+    if ((mode === "worklog" || mode === "product") && !keyword.trim()) {
+      setError(mode === "product" ? "제품명을 입력해 주세요." : "키워드를 입력해 주세요.");
+      return;
+    }
+    if (mode === "worklog" && pendingFiles.length === 0 && !retrySnapshot?.imagesUploaded) {
+      const ok = window.confirm(
+        "사진 없이도 만들 수 있지만 품질이 떨어질 수 있어요. 계속할까요?",
+      );
+      if (!ok) return;
+    }
+
+    setError(null);
+    setStep("generate");
+    setPhaseStatus("create");
+
+    const createBrandId = usingDefaultTheme ? USE_DEFAULT_THEME_ID : brandId;
+
+    try {
+      let postId = retryPostId;
+      const canReuse =
+        Boolean(postId && retrySnapshot) &&
+        retrySnapshot!.mode === mode &&
+        retrySnapshot!.brandId === createBrandId;
+
+      if (!canReuse) {
+        postId = null;
+        setRetryPostId(null);
+        setRetrySnapshot(null);
+      }
+
+      if (!postId) {
+        setPhaseStatus("create");
+        const createRes = await fetch("/api/posts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brandId: createBrandId,
+            mode,
+            keyword:
+              mode === "topic"
+                ? topic.trim().slice(0, 120)
+                : keyword.trim() || undefined,
+            productHighlights:
+              mode === "worklog" || mode === "product"
+                ? productHighlights.trim() || null
+                : null,
+            captionTone: captionTone || BRAND_CAPTION_TONE,
+          }),
+        });
+        const createData = (await createRes.json().catch(() => ({}))) as {
+          error?: string;
+          post?: { id: string };
+        };
+        if (!createRes.ok || !createData.post) {
+          throw new Error(createData.error || "글 생성에 실패했습니다.");
+        }
+        postId = createData.post.id;
+        setRetryPostId(postId);
+        setRetrySnapshot({
+          mode,
+          brandId: createBrandId,
+          imagesUploaded: false,
+        });
+      }
+
+      const alreadyUploaded = Boolean(retrySnapshot?.imagesUploaded && canReuse);
+      if ((mode === "worklog" || mode === "product") && pendingFiles.length && !alreadyUploaded) {
+        const total = pendingFiles.length;
+        setPhaseStatus("upload", { done: 0, total });
+        for (let i = 0; i < pendingFiles.length; i++) {
+          const file = pendingFiles[i];
+          const form = new FormData();
+          form.set("file", file);
+          form.set("autoCaption", mode === "worklog" ? "true" : "false");
+          const up = await fetch(`/api/posts/${postId}/images`, {
+            method: "POST",
+            body: form,
+          });
+          if (!up.ok) {
+            const err = (await up.json().catch(() => ({}))) as { error?: string };
+            throw new Error(err.error || "사진 업로드에 실패했습니다.");
+          }
+          setPhaseStatus("upload", { done: i + 1, total });
+        }
+        setPendingFiles([]);
+        setRetrySnapshot({
+          mode,
+          brandId: createBrandId,
+          imagesUploaded: true,
+        });
+      }
+
+      setPhaseStatus("generate");
+      if (mode === "topic") {
+        const res = await fetch(`/api/posts/${postId}/generate-topic`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            topic: topic.trim(),
+            length: topicLength,
+            imageCount,
+            imageSource: useAiImages ? "ai" : "unsplash",
+            replaceImages: true,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(data.error || "글 만들기에 실패했습니다.");
+      } else {
+        const res = await fetch(`/api/posts/${postId}/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            keyword: keyword.trim(),
+            productHighlights: productHighlights.trim() || null,
+            captionTone: captionTone || BRAND_CAPTION_TONE,
+            length: topicLength,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(data.error || "초안 만들기에 실패했습니다.");
+      }
+
+      setRetryPostId(null);
+      setRetrySnapshot(null);
+      router.push(`/posts/${postId}`);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "생성에 실패했습니다.");
+      setStep("input");
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Stepper current={step} />
+
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+      {step === "mode" ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-900">어떤 글을 만들까요?</h2>
+            <p className="mt-1 text-sm text-zinc-600">하나만 고르면 돼요.</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {MODE_ORDER.map((id) => {
+              const meta = POST_MODE_META[id];
+              const selected = mode === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setMode(id);
+                    setError(null);
+                  }}
+                  className={`rounded-xl border p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20 ${
+                    selected
+                      ? "border-zinc-900 bg-zinc-50 shadow-sm"
+                      : "border-zinc-200 bg-white hover:border-zinc-400"
+                  }`}
+                >
+                  <div className="text-base font-semibold text-zinc-900">{meta.title}</div>
+                  <p className="mt-2 text-sm text-zinc-600">{meta.description}</p>
+                  <span className="mt-3 inline-block rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600">
+                    예: {meta.example}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" onClick={goNextFromMode} disabled={!mode}>
+              다음
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {step === "input" && mode ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-900">
+              {mode === "topic"
+                ? "주제를 적어 주세요"
+                : mode === "product"
+                  ? "제품 정보를 알려 주세요"
+                  : "키워드와 사진을 준비해 주세요"}
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600">{POST_MODE_META[mode].description}</p>
+          </div>
+
+          <Label>
+            <span>테마</span>
+            {brands.length === 0 ? (
+              <div className="mt-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700">
+                기본 테마 ·{" "}
+                <Link href="/brands/new" className="text-zinc-900 underline">
+                  테마 만들기
+                </Link>
+              </div>
+            ) : (
+              <select
+                className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15"
+                value={brandId}
+                onChange={(e) => setBrandId(e.target.value)}
+              >
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                    {!b.learned ? " (미학습)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Label>
+
+          <Label>
+            <span>톤</span>
+            <select
+              className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15"
+              value={captionTone || BRAND_CAPTION_TONE}
+              onChange={(e) => setCaptionTone(e.target.value)}
+            >
+              {toneOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </Label>
+
+          <div>
+            <p className="text-sm font-medium text-zinc-800">글 길이</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-3">
+              {TOPIC_LENGTHS.map((id) => {
+                const preset = TOPIC_LENGTH_PRESETS[id];
+                const selected = topicLength === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => onTopicLengthChange(id)}
+                    className={`rounded-xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20 ${
+                      selected
+                        ? "border-zinc-900 bg-zinc-50"
+                        : "border-zinc-200 bg-white hover:border-zinc-400"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-zinc-900">{preset.label}</div>
+                    <div className="mt-1 text-xs text-zinc-500">{preset.hint}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {mode === "topic" ? (
+            <>
+              <Label>
+                <span>주제</span>
+                <Input
+                  className="mt-1.5 h-12 text-base"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  placeholder="예: 현재 주가가 내리는 이유"
+                  maxLength={200}
+                />
+              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700">
+                  이미지
+                  <select
+                    className="bg-transparent outline-none"
+                    value={imageCount}
+                    onChange={(e) => setImageCount(Number(e.target.value) || 3)}
+                  >
+                    {[1, 2, 3, 4, 5, 6].map((n) => (
+                      <option key={n} value={n}>
+                        {n}장
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span className="rounded-full bg-zinc-100 px-3 py-1.5 text-sm text-zinc-600">
+                  {useAiImages
+                    ? "AI 그림"
+                    : "Unsplash · 한도 초과 시 뉴스 이미지(출처 표시)"}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="text-xs text-zinc-500 underline"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? "고급 닫기" : "고급 옵션"}
+              </button>
+              {showAdvanced ? (
+                <label className="flex items-center gap-2 text-sm text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={useAiImages}
+                    onChange={(e) => setUseAiImages(e.target.checked)}
+                  />
+                  AI로 그림 그리기 (비용 발생)
+                </label>
+              ) : null}
+            </>
+          ) : null}
+
+          {mode === "worklog" || mode === "product" ? (
+            <>
+              <Label>
+                <span>{mode === "product" ? "제품명" : "키워드"}</span>
+                <Input
+                  className="mt-1.5 h-12 text-base"
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  placeholder={
+                    mode === "product" ? "예: OO 사이드스텝" : "예: AG바디킷 장착 후기"
+                  }
+                  maxLength={120}
+                />
+              </Label>
+              <div>
+                <ImageUploadDropzone
+                  label={`사진 ${mode === "worklog" ? "(권장)" : "(선택)"}`}
+                  disabled={false}
+                  onFiles={(files) => {
+                    setPendingFiles(files);
+                    // New local selection invalidates prior upload marker for this retry
+                    if (retrySnapshot) {
+                      setRetrySnapshot({ ...retrySnapshot, imagesUploaded: false });
+                    }
+                  }}
+                />
+                {pendingFiles.length ? (
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    {pendingFiles.length}장 선택됨
+                  </span>
+                ) : retrySnapshot?.imagesUploaded ? (
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    이전에 올린 사진을 그대로 쓰고, 초안만 다시 만듭니다.
+                  </span>
+                ) : mode === "worklog" ? (
+                  <span className="mt-1 block text-xs text-amber-700">
+                    사진 없이도 가능하지만 품질이 떨어질 수 있어요.
+                  </span>
+                ) : null}
+              </div>
+              {mode === "product" || showAdvanced ? (
+                <Label>
+                  <span>제품 특장점 (선택)</span>
+                  <Textarea
+                    rows={3}
+                    value={productHighlights}
+                    onChange={(e) => setProductHighlights(e.target.value)}
+                    placeholder="알고 있는 장점만 짧게"
+                    maxLength={2000}
+                  />
+                </Label>
+              ) : (
+                <button
+                  type="button"
+                  className="text-xs text-zinc-500 underline"
+                  onClick={() => setShowAdvanced(true)}
+                >
+                  고급 옵션
+                </button>
+              )}
+            </>
+          ) : null}
+
+          <div className="flex justify-between gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setStep("mode")}>
+              이전
+            </Button>
+            <Button type="button" onClick={() => void runGenerate()}>
+              {mode === "topic"
+                ? "글 만들기"
+                : mode === "product"
+                  ? "리뷰 초안 만들기"
+                  : "초안 만들기"}
+            </Button>
+          </div>
+          {retryPostId ? (
+            <p className="text-xs text-zinc-500">
+              이전 시도가 있어요. 같은 설정이면 사진은 다시 올리지 않고 초안만 이어서 만듭니다.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {step === "generate" ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-16">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
+            <p className="text-base font-medium text-zinc-900">{statusLine}</p>
+            <p className="text-sm text-zinc-500">
+              {phase === "create"
+                ? "1/3 글 준비"
+                : phase === "upload"
+                  ? `2/3 사진 업로드${uploadProgress ? ` · ${uploadProgress.done}/${uploadProgress.total}` : ""}`
+                  : "3/3 초안 생성"}
+            </p>
+            <p className="text-sm text-zinc-500">잠시만 기다려 주세요. 창을 닫지 마세요.</p>
+          </CardContent>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
+function Stepper({ current }: { current: Step }) {
+  const idx = STEPS.findIndex((s) => s.id === current);
+  return (
+    <ol className="flex flex-wrap items-center gap-2 text-sm">
+      {STEPS.map((s, i) => {
+        const active = i === idx;
+        const done = i < idx;
+        return (
+          <li key={s.id} className="flex items-center gap-2">
+            {i > 0 ? <span className="text-zinc-300">—</span> : null}
+            <span
+              className={
+                active
+                  ? "font-semibold text-zinc-900"
+                  : done
+                    ? "text-zinc-700"
+                    : "text-zinc-400"
+              }
+            >
+              {s.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
