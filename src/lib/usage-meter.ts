@@ -1,3 +1,4 @@
+import { incrementMeter } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 
 export type ApiSlot =
@@ -47,6 +48,17 @@ export async function recordUserUsage(
       estCostKrw: { increment: delta.estCostKrw || 0 },
     },
   });
+
+  if (delta.postsCreated) {
+    await incrementMeter(userId, "posts", delta.postsCreated).catch(() => undefined);
+  }
+  if (delta.generates) {
+    await incrementMeter(userId, "generates", delta.generates).catch(() => undefined);
+  }
+}
+
+export async function recordShortsUsage(userId: string, delta = 1) {
+  return incrementMeter(userId, "shorts", delta);
 }
 
 export async function recordApiUsage(

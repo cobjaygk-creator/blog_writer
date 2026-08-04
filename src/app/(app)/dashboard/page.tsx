@@ -1,9 +1,9 @@
 import Link from "next/link";
 
+import { NewCutLink } from "@/components/NewCutLink";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { auth } from "@/lib/auth";
-import { buildNewCutDeepLink } from "@/lib/newcut";
 import { getPlanLimits, isUnlimitedEmail, normalizePlan } from "@/lib/plans";
 import { postStatusLabel } from "@/lib/post-status";
 import { prisma } from "@/lib/prisma";
@@ -44,7 +44,6 @@ export default async function DashboardPage() {
     dbError = "DB에 연결하지 못했습니다. DATABASE_URL과 prisma migrate를 확인해 주세요.";
   }
 
-  const newCutUrl = buildNewCutDeepLink({ from: "blog_writer" });
   const plan = normalizePlan(session!.user!.plan);
   const unlimited = isUnlimitedEmail(session!.user!.email);
   const limits = getPlanLimits(plan, session!.user!.email);
@@ -65,11 +64,11 @@ export default async function DashboardPage() {
             </span>
           </p>
         </div>
-        <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
+        <NewCutLink>
           <Button type="button" variant="outline" size="sm">
             New Cut 쇼츠
           </Button>
-        </a>
+        </NewCutLink>
       </div>
 
       {dbError ? (

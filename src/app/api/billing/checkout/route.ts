@@ -6,6 +6,7 @@ import { jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
 import { getTossKeys } from "@/lib/integration-config";
 import { fetchWithTimeout } from "@/lib/integrations";
 import { prisma } from "@/lib/prisma";
+import { DITODIO_PRODUCT_CODE } from "@/lib/plans";
 import { ensurePlanProductsSeeded } from "@/lib/plan-product";
 
 const schema = z.object({
@@ -36,7 +37,12 @@ export async function POST(request: Request) {
 
   await ensurePlanProductsSeeded();
   const product = await prisma.planProduct.findUnique({
-    where: { code: parsed.data.planCode },
+    where: {
+      productCode_code: {
+        productCode: DITODIO_PRODUCT_CODE,
+        code: parsed.data.planCode,
+      },
+    },
   });
   if (!product || !product.isPurchasable || !product.active) {
     return jsonError("구매할 수 없는 요금제입니다.", 400);
@@ -78,7 +84,7 @@ export async function POST(request: Request) {
   const issued = (await issueRes.json()) as { billingKey?: string };
   if (!issued.billingKey) return jsonError("빌링키를 받지 못했습니다.", 502);
 
-  const orderId = `bw_${userId!.slice(0, 8)}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const orderId = `dt_${userId!.slice(0, 8)}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
   const chargeRes = await fetchWithTimeout(
     `https://api.tosspayments.com/v1/billing/${issued.billingKey}`,
     {
@@ -91,7 +97,7 @@ export async function POST(request: Request) {
         customerKey: parsed.data.customerKey,
         amount,
         orderId,
-        orderName: `blog_writer ${product.name} ${interval}`,
+        orderName: `Ditodio ${product.name} ${interval}`,
       }),
     },
     30_000,
@@ -116,6 +122,7 @@ export async function POST(request: Request) {
     data: {
       userId: userId!,
       planProductId: product.id,
+      productCode: DITODIO_PRODUCT_CODE,
       status: "active",
       interval,
       tossBillingKey: issued.billingKey,

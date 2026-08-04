@@ -1,3 +1,4 @@
+import { getMeterUsed } from "@/lib/entitlements";
 import { jsonError } from "@/lib/api-helpers";
 import { isUnlimitedEmail, startOfUtcDay, UNLIMITED_LIMITS } from "@/lib/plans";
 import { getLimitsForPlanCode } from "@/lib/plan-product";
@@ -110,16 +111,39 @@ export async function assertCanCreatePost(userId: string) {
   const { limits, unlimited, suspended } = await getUserPlan(userId);
   if (suspended) return suspendedError();
   if (unlimited) return null;
+
+  const { used: monthUsed } = await getMeterUsed(userId, "posts");
+  if (monthUsed >= limits.postsPerMonth) {
+    return jsonError(
+      `현재 Ditodio 플랜에서는 월 포스트를 최대 ${limits.postsPerMonth}개까지 만들 수 있습니다.`,
+      403,
+    );
+  }
+
   const since = startOfUtcDay();
-  const count = await prisma.post.count({
+  const dayCount = await prisma.post.count({
     where: {
       brand: { userId },
       createdAt: { gte: since },
     },
   });
-  if (count >= limits.postsPerDay) {
+  if (dayCount >= limits.postsPerDay) {
     return jsonError(
       `현재 플랜에서는 하루 포스트를 최대 ${limits.postsPerDay}개까지 만들 수 있습니다.`,
+      403,
+    );
+  }
+  return null;
+}
+
+export async function assertCanCreateShort(userId: string) {
+  const { limits, unlimited, suspended } = await getUserPlan(userId);
+  if (suspended) return suspendedError();
+  if (unlimited) return null;
+  const { used } = await getMeterUsed(userId, "shorts");
+  if (used >= limits.shortsPerMonth) {
+    return jsonError(
+      `현재 Ditodio 플랜에서는 월 쇼츠를 최대 ${limits.shortsPerMonth}개까지 만들 수 있습니다.`,
       403,
     );
   }

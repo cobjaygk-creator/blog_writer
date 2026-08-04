@@ -34,8 +34,11 @@ export function AdminShell({
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-4">
             <Link href="/admin" className="text-sm font-semibold text-zinc-900">
-              blog_writer 관리
+              Ditodio 관리
             </Link>
+            <span className="hidden text-[11px] text-zinc-400 sm:inline">
+              통합 · 포스트 · 쇼츠
+            </span>
             <Link href="/dashboard" className="text-xs text-zinc-500 hover:text-zinc-800">
               ← 앱으로
             </Link>

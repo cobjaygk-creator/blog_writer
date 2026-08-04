@@ -21,6 +21,8 @@ export async function GET(request: Request) {
     apiUsage,
     postsCreated,
     planGroups,
+    shortsAgg,
+    postsMeterAgg,
   ] = await Promise.all([
     prisma.user.count({ where: { createdAt: { gte: since } } }),
     prisma.user.count(),
@@ -49,6 +51,14 @@ export async function GET(request: Request) {
     }),
     prisma.post.count({ where: { createdAt: { gte: since } } }),
     prisma.user.groupBy({ by: ["plan"], _count: true }),
+    prisma.usagePeriod.aggregate({
+      where: { meter: "shorts", periodStart: { gte: since } },
+      _sum: { used: true },
+    }),
+    prisma.usagePeriod.aggregate({
+      where: { meter: "posts", periodStart: { gte: since } },
+      _sum: { used: true },
+    }),
   ]);
 
   const todayUsage = await prisma.usageDaily.aggregate({
@@ -68,11 +78,14 @@ export async function GET(request: Request) {
   }, 0);
 
   return adminJson({
+    product: "ditodio",
     range: { days, since: since.toISOString() },
     growth: {
       newUsers,
       totalUsers,
       postsCreated,
+      postsMeter: postsMeterAgg._sum.used || 0,
+      shortsCreated: shortsAgg._sum.used || 0,
       generates: usageAgg._sum.generates || 0,
     },
     revenue: {

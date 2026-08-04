@@ -1,60 +1,66 @@
-# blog_writer
+# Ditodio (blog_writer hub)
 
-AI 블로그 포스트 생성기 (New Cut 쇼츠와 **별도** 서비스).
+Ditodio 통합 제품군의 **컨트롤 플레인** — 계정 · 요금제 · 관리자 · 블로그(포스트) 앱.
 
-업체(Brand)별 기존 글 문체를 학습하고, 사진 + 키워드로 블로그 초안을 만든 뒤  
-네이버·티스토리에 복사/붙여넣기로 올리는 워크플로를 지원합니다.  
-New Cut은 메뉴/딥링크로만 연결합니다 (`NEXT_PUBLIC_NEW_CUT_URL`).
+블로그 포스트와 New Cut 쇼츠는 시스템이 달라도 **ditodio.com 계정·통합 요금제**로 함께 씁니다.
+쇼츠 앱은 이 허브의 `/api/platform/*` 로 한도·사용량을 조회/차감합니다.
 
 ## Stack
 
 - Next.js (App Router) + TypeScript + Tailwind
 - Prisma + PostgreSQL
-- Auth.js / NextAuth (Credentials)
+- Auth.js / NextAuth (Credentials) — 프로덕션에서 `.ditodio.com` 쿠키 공유 가능
 - S3 호환 스토리지 · LLM/Vision (OpenAI-compatible HTTP)
-- UI primitives (Button/Input/Card 등 shadcn 스타일)
+- Toss 빌링 · 관리자 콘솔 (`/admin`)
 
 ## Features
 
-1. 회원가입 / 로그인 / 세션
-2. 업체 CRUD · 원문(SourcePost) · 스타일 학습(StyleProfile)
-3. 포스트 생성 · 사진 업로드(S3 또는 로컬 `public/uploads`) · 비전 캡션 · 순서 변경
-4. StyleProfile + 키워드 + 캡션으로 초안 생성 · 스마트 에디터 편집
-5. 네이버/티스토리용 원클릭 복사(서식·이미지)
-6. New Cut 딥링크 (`?from=blog_writer&source=blog#/studio/create`)
+1. 회원가입 / 로그인 / 세션 (Ditodio 단일 계정)
+2. 테마 CRUD · 원문 · 스타일 학습
+3. 포스트 생성 · 사진 · 비전 캡션 · 초안 생성
+4. Ditodio 통합 요금제 (포스트 N/월 + 쇼츠 N/월)
+5. 관리자: 회원 · 요금제 · 결제 · 사용량(미터) · 연동 키
+6. New Cut 딥링크 + handoff JWT (`/api/platform/handoff`)
 
-LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있습니다.  
-연동 상태: `GET /api/integrations/status`
+### Domain layout (production)
 
-### Integrations
+| Host | Role |
+|------|------|
+| `ditodio.com` | 랜딩 · 가입 · 요금 |
+| `app.ditodio.com` | 이 앱 (포스트) |
+| `shorts.ditodio.com` | New Cut |
+| `/admin` | Ditodio 공용 관리자 |
 
-| Env | 기본 | 설명 |
-|-----|------|------|
-| `INTEGRATIONS_ALLOW_FALLBACK` | `true` | `false`면 키 누락/API 실패 시 에러 (프로덕션 권장) |
-| `LLM_TIMEOUT_MS` / `VISION_TIMEOUT_MS` / `STORAGE_TIMEOUT_MS` | 45s/45s/30s | 요청 타임아웃 |
-| `LLM_MAX_TOKENS` / `VISION_MAX_TOKENS` | 2500/300 | 응답 토큰 상한 |
-| `UPLOAD_MAX_BYTES` | 8MB | 업로드 크기 제한 |
-| `UPLOAD_MAX_IMAGES_PER_POST` | 20 | 포스트당 이미지 수 제한 |
+Set `AUTH_COOKIE_DOMAIN=.ditodio.com` for cross-subdomain SSO.
 
-실연동 시 `.env`에 `LLM_API_KEY`(및 선택적으로 `VISION_*`, `STORAGE_*`)를 채우면 live 모드로 동작합니다.
+### Platform API (New Cut)
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/platform/me` | session / handoff / service token |
+| GET | `/api/platform/entitlements` | same |
+| POST | `/api/platform/usage` | `{ meter: "shorts"\|"posts"\|"generates", delta? }` |
+| POST | `/api/platform/handoff` | session → short-lived JWT |
+
+Service auth: `PLATFORM_SERVICE_TOKEN` + `X-User-Id` (or `Authorization: Bearer …`).
 
 ### New Cut deep link
 
 | 항목 | 값 |
 |------|-----|
 | Local base | `http://127.0.0.1:5173` (`NEXT_PUBLIC_NEW_CUT_URL`) |
-| Target | `#/studio/create` (블로그 URL 탭) |
-| Query | `from=blog_writer`, `source=blog`, optional `brandId`, `postId`, `url` |
+| Target | `#/studio/create` |
+| Query | `from=ditodio`, `source=blog`, optional `brandId`, `postId`, `handoff` |
 
-예시: `http://127.0.0.1:5173/?from=blog_writer&source=blog&postId=…#/studio/create`
+### Ditodio plan seeds
 
-### Plan limits
+| Plan | 월 요금 | 포스트/월 | 쇼츠/월 | 테마 |
+|------|---------|-----------|---------|------|
+| free | 0 | 15 | 3 | 1 |
+| lite | 29,000 | 60 | 20 | 5 |
+| pro | 79,000 | 200 | 80 | 30 |
 
-| Plan | 업체 | 원문/업체 | 포스트/일 | 이미지/포스트 |
-|------|------|-----------|-----------|---------------|
-| free | 2 | 5 | 5 | 8 |
-| lite | 10 | 20 | 30 | 20 |
-| pro | 100 | 100 | 200 | 40 |
+한도는 관리자 요금제 화면에서 조정합니다.
 
 ## Setup
 
@@ -66,24 +72,19 @@ LLM/Vision/S3 키가 없어도 로컬 폴백으로 흐름을 확인할 수 있�
 ```powershell
 cd C:\Users\stkim\Documents\Codex\blog_writer
 Copy-Item .env.example .env
-# .env 에서 DATABASE_URL, AUTH_SECRET 수정
-```
-
-`AUTH_SECRET` 예시 생성:
-
-```powershell
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# DATABASE_URL, AUTH_SECRET, ADMIN_EMAILS, SECRETS_ENCRYPTION_KEY 등 설정
 ```
 
 3. 마이그레이션 & 개발 서버
 
 ```powershell
 npm.cmd install
-npx.cmd prisma migrate dev --name init
+npx.cmd prisma migrate deploy
 npm.cmd run dev
 ```
 
 - App: http://localhost:3000  
+- Admin: http://localhost:3000/admin  
 - Health: http://localhost:3000/api/health
 
 ## Scripts
@@ -94,12 +95,3 @@ npm.cmd run dev
 | `npm run build` | 프로덕션 빌드 |
 | `npm run db:migrate` | Prisma migrate |
 | `npm run db:studio` | Prisma Studio |
-
-## Roadmap
-
-1. ~~프로젝트 초기화 & DB & 인증~~  
-2. ~~업체 + 원문 + 스타일 학습 API~~  
-3. ~~사진 업로드 / 비전 캡션 / 순서~~  
-4. ~~포스트 초안 생성 API~~  
-5. ~~화면 고도화 (UI primitives, 편집기)~~  
-6. ~~New Cut 메뉴 연결~~  

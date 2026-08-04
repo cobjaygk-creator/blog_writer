@@ -40,6 +40,44 @@ export async function GET(request: Request) {
     });
   }
 
+  if (tab === "meters") {
+    const rows = await prisma.usagePeriod.findMany({
+      where: { periodStart: { gte: since } },
+      include: { user: { select: { id: true, email: true, plan: true } } },
+      orderBy: [{ periodStart: "desc" }, { used: "desc" }],
+      take: 500,
+    });
+    const byUser = new Map<
+      string,
+      {
+        userId: string;
+        email: string;
+        plan: string;
+        posts: number;
+        shorts: number;
+        generates: number;
+      }
+    >();
+    for (const r of rows) {
+      const cur = byUser.get(r.userId) || {
+        userId: r.userId,
+        email: r.user.email,
+        plan: r.user.plan,
+        posts: 0,
+        shorts: 0,
+        generates: 0,
+      };
+      if (r.meter === "posts") cur.posts += r.used;
+      else if (r.meter === "shorts") cur.shorts += r.used;
+      else if (r.meter === "generates") cur.generates += r.used;
+      byUser.set(r.userId, cur);
+    }
+    return adminJson({
+      days,
+      users: [...byUser.values()].sort((a, b) => b.posts + b.shorts - (a.posts + a.shorts)),
+    });
+  }
+
   const rows = await prisma.usageDaily.findMany({
     where: { day: { gte: since } },
     include: { user: { select: { id: true, email: true, plan: true } } },

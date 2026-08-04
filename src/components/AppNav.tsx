@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 
+import { NewCutLink } from "@/components/NewCutLink";
 import { Button } from "@/components/ui/button";
-import { buildNewCutDeepLink } from "@/lib/newcut";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS: Array<{
@@ -36,7 +36,6 @@ export function AppNav({
   className?: string;
 }) {
   const pathname = usePathname() || "/";
-  const newCutUrl = buildNewCutDeepLink({ from: "blog_writer" });
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -53,7 +52,7 @@ export function AppNav({
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
         <div className="flex min-w-0 items-center gap-5">
           <Link href="/" className="shrink-0 text-sm font-semibold tracking-tight text-zinc-900">
-            blog_writer
+            Ditodio
           </Link>
           <nav className="flex flex-wrap items-center gap-3 text-sm text-zinc-600">
             {NAV_LINKS.map((link) => {
@@ -93,15 +92,12 @@ export function AppNav({
                 관리
               </Link>
             ) : null}
-            <a
-              href={newCutUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <NewCutLink
               className="hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20 rounded-sm"
               title="New Cut 스튜디오에서 쇼츠 만들기"
             >
               New Cut 쇼츠
-            </a>
+            </NewCutLink>
           </nav>
         </div>
 

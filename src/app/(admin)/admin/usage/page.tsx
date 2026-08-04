@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function AdminUsagePage() {
-  const [tab, setTab] = useState<"users" | "api">("users");
+  const [tab, setTab] = useState<"users" | "meters" | "api">("meters");
   const [days, setDays] = useState(7);
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export default function AdminUsagePage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">사용량</h1>
-          <p className="mt-1 text-sm text-zinc-600">유저별 생성 · 연동 API 호출</p>
+          <p className="mt-1 text-sm text-zinc-600">Ditodio 미터(포스트·쇼츠) · 일별 · 연동 API</p>
         </div>
         <div className="flex gap-2">
           <select
@@ -45,10 +45,17 @@ export default function AdminUsagePage() {
           <div className="flex rounded-lg border border-zinc-200 p-0.5 text-xs">
             <button
               type="button"
+              className={`rounded-md px-3 py-1.5 ${tab === "meters" ? "bg-zinc-900 text-white" : ""}`}
+              onClick={() => setTab("meters")}
+            >
+              통합 미터
+            </button>
+            <button
+              type="button"
               className={`rounded-md px-3 py-1.5 ${tab === "users" ? "bg-zinc-900 text-white" : ""}`}
               onClick={() => setTab("users")}
             >
-              유저별
+              일별
             </button>
             <button
               type="button"
@@ -62,6 +69,39 @@ export default function AdminUsagePage() {
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+      {tab === "meters" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>유저별 월간 미터</CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b text-zinc-500">
+                  <th className="py-2">이메일</th>
+                  <th>플랜</th>
+                  <th>포스트</th>
+                  <th>쇼츠</th>
+                  <th>생성</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={String(u.userId)} className="border-b border-zinc-100">
+                    <td className="py-2">{String(u.email)}</td>
+                    <td>{String(u.plan)}</td>
+                    <td>{String(u.posts ?? 0)}</td>
+                    <td>{String(u.shorts ?? 0)}</td>
+                    <td>{String(u.generates ?? 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!users.length ? <p className="text-sm text-zinc-500">데이터 없음</p> : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {tab === "users" ? (
         <Card>

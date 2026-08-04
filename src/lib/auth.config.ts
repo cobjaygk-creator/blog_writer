@@ -3,13 +3,37 @@ import type { NextAuthConfig } from "next-auth";
 /**
  * Edge-safe auth config (no Prisma). Used by middleware.
  * Credentials provider + DB live in auth.ts.
+ *
+ * Cross-subdomain SSO: set AUTH_COOKIE_DOMAIN=.ditodio.com in production
+ * so app.ditodio.com and shorts.ditodio.com share the session.
  */
+const cookieDomain = process.env.AUTH_COOKIE_DOMAIN?.trim() || undefined;
+const useSecureCookies =
+  process.env.AUTH_URL?.startsWith("https://") ||
+  process.env.NEXTAUTH_URL?.startsWith("https://");
+
 export const authConfig = {
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
   },
   providers: [],
+  cookies: cookieDomain
+    ? {
+        sessionToken: {
+          name: useSecureCookies
+            ? "__Secure-authjs.session-token"
+            : "authjs.session-token",
+          options: {
+            httpOnly: true,
+            sameSite: "lax",
+            path: "/",
+            secure: useSecureCookies,
+            domain: cookieDomain,
+          },
+        },
+      }
+    : undefined,
   callbacks: {
     authorized({ auth, request }) {
       const { pathname } = request.nextUrl;
@@ -18,6 +42,7 @@ export const authConfig = {
       const isPublic =
         pathname === "/" ||
         pathname.startsWith("/api/auth") ||
+        pathname.startsWith("/api/platform") ||
         pathname === "/api/health" ||
         isAuthPage;
 

@@ -7,7 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Stats = {
-  growth: { newUsers: number; totalUsers: number; postsCreated: number; generates: number };
+  growth: {
+    newUsers: number;
+    totalUsers: number;
+    postsCreated: number;
+    shortsCreated?: number;
+    generates: number;
+  };
   revenue: {
     mrr: number;
     activeSubscriptions: number;
@@ -43,8 +49,10 @@ export default function AdminHomePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-900">관리 개요</h1>
-        <p className="mt-1 text-sm text-zinc-600">최근 7일 스냅샷 · 자세한 지표는 통계 메뉴</p>
+        <h1 className="text-2xl font-semibold text-zinc-900">Ditodio 관리 개요</h1>
+        <p className="mt-1 text-sm text-zinc-600">
+          통합 요금제 · 포스트/쇼츠 사용량 · 최근 7일 스냅샷
+        </p>
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -56,8 +64,11 @@ export default function AdminHomePage() {
         <Kpi title="7일 추정 원가" value={stats ? won(stats.cost.estCostKrw) : "…"} />
         <Kpi title="신규 가입(7일)" value={stats ? String(stats.growth.newUsers) : "…"} />
         <Kpi title="전체 회원" value={stats ? String(stats.growth.totalUsers) : "…"} />
-        <Kpi title="결제 성공액(7일)" value={stats ? won(stats.revenue.paidAmountKrw) : "…"} />
-        <Kpi title="결제 실패(7일)" value={stats ? String(stats.revenue.failedCount) : "…"} />
+        <Kpi title="포스트(7일)" value={stats ? String(stats.growth.postsCreated) : "…"} />
+        <Kpi
+          title="쇼츠 미터(7일)"
+          value={stats ? String(stats.growth.shortsCreated ?? 0) : "…"}
+        />
       </div>
 
       <Card>

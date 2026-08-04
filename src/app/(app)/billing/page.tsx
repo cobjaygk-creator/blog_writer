@@ -8,11 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 type Product = {
   code: string;
   name: string;
+  description?: string | null;
   priceMonthlyKrw: number;
   priceYearlyKrw: number | null;
   brandsLimit: number;
   generatesPerDay: number;
   postsPerDay: number;
+  postsPerMonth: number;
+  shortsPerMonth: number;
   isPurchasable: boolean;
 };
 
@@ -20,6 +23,7 @@ export default function BillingPage() {
   const [planCode, setPlanCode] = useState("free");
   const [products, setProducts] = useState<Product[]>([]);
   const [subscription, setSubscription] = useState<Record<string, unknown> | null>(null);
+  const [limits, setLimits] = useState<Record<string, number> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -33,6 +37,7 @@ export default function BillingPage() {
     setPlanCode(data.planCode || "free");
     setProducts(data.products || []);
     setSubscription(data.subscription);
+    setLimits(data.limits || null);
   }
 
   useEffect(() => {
@@ -53,15 +58,21 @@ export default function BillingPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-semibold text-zinc-900">요금 · 구독</h1>
+      <h1 className="text-2xl font-semibold text-zinc-900">Ditodio 요금 · 구독</h1>
       <p className="mt-2 text-sm text-zinc-600">
-        현재 플랜: <strong>{planCode}</strong>
+        포스트와 쇼츠를 한 요금제로 이용합니다. 현재 플랜: <strong>{planCode}</strong>
         {subscription ? (
           <span className="ml-2 text-zinc-500">
             · 구독 {String((subscription as { status?: string }).status)}
           </span>
         ) : null}
       </p>
+      {limits ? (
+        <p className="mt-1 text-xs text-zinc-500">
+          한도 — 포스트/월 {limits.postsPerMonth} · 쇼츠/월 {limits.shortsPerMonth} · 테마{" "}
+          {limits.brands}
+        </p>
+      ) : null}
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
       {msg ? <p className="mt-3 text-sm text-emerald-700">{msg}</p> : null}
 
@@ -77,13 +88,13 @@ export default function BillingPage() {
                   ? "무료"
                   : `월 ${p.priceMonthlyKrw.toLocaleString()}원`}
               </p>
+              <p>포스트 {p.postsPerMonth}/월</p>
+              <p>쇼츠 {p.shortsPerMonth}/월</p>
               <p>테마 {p.brandsLimit}</p>
-              <p>생성/일 {p.generatesPerDay}</p>
-              <p>글/일 {p.postsPerDay}</p>
+              {p.description ? <p className="text-xs text-zinc-500">{p.description}</p> : null}
               {p.isPurchasable ? (
                 <p className="text-xs text-zinc-500">
-                  카드 등록 결제는 Toss 빌링 위젯 연동 후 checkout API로 완료합니다. 관리자에서
-                  Toss 키를 설정하세요.
+                  카드 등록 결제는 Toss 빌링 위젯 연동 후 checkout API로 완료합니다.
                 </p>
               ) : null}
             </CardContent>

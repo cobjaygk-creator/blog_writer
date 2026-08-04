@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { buildNewCutDeepLink } from "@/lib/newcut";
+import { NewCutLink } from "@/components/NewCutLink";
 import { postStatusLabel } from "@/lib/post-status";
 import { normalizeExtendedTraits } from "@/lib/style-traits";
 
@@ -230,8 +230,6 @@ export function BrandWorkspace({
     router.refresh();
   }
 
-  const newCutUrl = buildNewCutDeepLink({ from: "blog_writer", source: "blog", brandId });
-
   return (
     <div className="space-y-6">
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -240,11 +238,11 @@ export function BrandWorkspace({
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>테마 정보</CardTitle>
           <div className="flex gap-2">
-            <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
+            <NewCutLink brandId={brandId}>
               <Button type="button" variant="outline" size="sm">
                 New Cut 쇼츠 만들기
               </Button>
-            </a>
+            </NewCutLink>
             <Button type="button" variant="danger" size="sm" onClick={deleteBrand} disabled={busy === "delete"}>
               삭제
             </Button>

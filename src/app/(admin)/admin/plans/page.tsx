@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -9,12 +8,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 type Plan = {
-  id?: string;
+  id: string;
   code: string;
   name: string;
+  description?: string | null;
   brandsLimit: number;
   sourcePostsPerBrand: number;
   postsPerDay: number;
+  postsPerMonth: number;
+  shortsPerMonth: number;
   imagesPerPost: number;
   generatesPerDay: number;
   dualGenerationEnabled: boolean;
@@ -38,8 +40,6 @@ export default function AdminPlansPage() {
       setError(data.error || "실패");
       return;
     }
-    // API returns without id — fetch from prisma via list; need id for PATCH
-    // Re-fetch raw: plans from listPlanProducts don't include id. Fix API to include id.
     setPlans(data.plans || []);
   }
 
@@ -48,12 +48,7 @@ export default function AdminPlansPage() {
   }, []);
 
   async function save() {
-    if (!editing?.id && !(editing as { id?: string })?.id) {
-      // plans from listPlanProducts may lack id — patch by loading from extended API
-    }
-    if (!editing) return;
-    const id = (editing as Plan & { id?: string }).id;
-    if (!id) {
+    if (!editing?.id) {
       setError("요금제 id가 없습니다. 페이지를 새로고침해 주세요.");
       return;
     }
@@ -76,8 +71,10 @@ export default function AdminPlansPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-900">요금제</h1>
-        <p className="mt-1 text-sm text-zinc-600">한도 · 가격 · 공개/구매 설정</p>
+        <h1 className="text-2xl font-semibold text-zinc-900">Ditodio 통합 요금제</h1>
+        <p className="mt-1 text-sm text-zinc-600">
+          결제 1건으로 블로그 포스트 + 쇼츠 한도를 함께 제공합니다.
+        </p>
       </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {msg ? <p className="text-sm text-emerald-700">{msg}</p> : null}
@@ -91,13 +88,14 @@ export default function AdminPlansPage() {
                   {p.name} <span className="text-zinc-400">({p.code})</span>
                 </p>
                 <p className="mt-1 text-xs text-zinc-500">
-                  월 {p.priceMonthlyKrw.toLocaleString()}원 · 테마 {p.brandsLimit} · 생성/일{" "}
-                  {p.generatesPerDay} · 글/일 {p.postsPerDay}
+                  월 {p.priceMonthlyKrw.toLocaleString()}원 · 포스트/월 {p.postsPerMonth} · 쇼츠/월{" "}
+                  {p.shortsPerMonth} · 테마 {p.brandsLimit}
                 </p>
                 <div className="mt-2 flex gap-1">
                   {p.active ? <Badge>active</Badge> : <Badge>off</Badge>}
                   {p.isPurchasable ? <Badge>구매가능</Badge> : null}
                   {p.isPublic ? <Badge>공개</Badge> : null}
+                  <Badge>통합</Badge>
                 </div>
               </div>
               <Button type="button" size="sm" variant="outline" onClick={() => setEditing(p)}>
@@ -124,6 +122,16 @@ export default function AdminPlansPage() {
                 onChange={(v) => setEditing({ ...editing, priceMonthlyKrw: Number(v) || 0 })}
               />
               <Field
+                label="포스트/월"
+                value={String(editing.postsPerMonth)}
+                onChange={(v) => setEditing({ ...editing, postsPerMonth: Number(v) || 0 })}
+              />
+              <Field
+                label="쇼츠/월"
+                value={String(editing.shortsPerMonth)}
+                onChange={(v) => setEditing({ ...editing, shortsPerMonth: Number(v) || 0 })}
+              />
+              <Field
                 label="테마 한도"
                 value={String(editing.brandsLimit)}
                 onChange={(v) => setEditing({ ...editing, brandsLimit: Number(v) || 0 })}
@@ -134,7 +142,7 @@ export default function AdminPlansPage() {
                 onChange={(v) => setEditing({ ...editing, sourcePostsPerBrand: Number(v) || 0 })}
               />
               <Field
-                label="글/일"
+                label="글/일 (소프트 캡)"
                 value={String(editing.postsPerDay)}
                 onChange={(v) => setEditing({ ...editing, postsPerDay: Number(v) || 0 })}
               />
@@ -157,12 +165,6 @@ export default function AdminPlansPage() {
                 취소
               </Button>
             </div>
-            <p className="text-xs text-zinc-500">
-              id가 없으면 API에 id를 포함하도록 목록을 확인하세요.{" "}
-              <Link href="/admin/plans" className="underline">
-                새로고침
-              </Link>
-            </p>
           </CardContent>
         </Card>
       ) : null}

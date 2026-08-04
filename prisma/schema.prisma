@@ -86,7 +86,15 @@ model User {
   subscriptions     Subscription[]
   payments          Payment[]
   usageDaily        UsageDaily[]
+  usagePeriods      UsagePeriod[]
   auditLogs         AdminAuditLog[] @relation("AuditActor")
+}
+
+/// Umbrella product registry (Ditodio control plane)
+model Product {
+  code      String   @id
+  name      String
+  createdAt DateTime @default(now())
 }
 
 model Brand {
@@ -270,7 +278,9 @@ model PostImage {
 
 model PlanProduct {
   id                     String         @id @default(cuid())
-  code                   String         @unique
+  /// Umbrella catalog: ditodio (unified posts + shorts)
+  productCode            String         @default("ditodio")
+  code                   String
   name                   String
   description            String?        @db.Text
   sortOrder              Int            @default(0)
@@ -282,6 +292,8 @@ model PlanProduct {
   imagesPerPost          Int
   generatesPerDay        Int            @default(20)
   dualGenerationEnabled  Boolean        @default(true)
+  /// Unified entitlements: postsPerMonth, shortsPerMonth, …
+  limitsJson             Json           @default("{}")
   priceMonthlyKrw        Int            @default(0)
   priceYearlyKrw         Int?
   currency               String         @default("KRW")
@@ -292,12 +304,16 @@ model PlanProduct {
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
   subscriptions          Subscription[]
+
+  @@unique([productCode, code])
+  @@index([productCode])
 }
 
 model Subscription {
   id                 String             @id @default(cuid())
   userId             String
   planProductId      String
+  productCode        String             @default("ditodio")
   status             SubscriptionStatus
   interval           BillingInterval    @default(monthly)
   tossBillingKey     String?
@@ -315,6 +331,7 @@ model Subscription {
   payments           Payment[]
 
   @@index([userId])
+  @@index([userId, productCode])
   @@index([status])
 }
 
@@ -373,6 +390,21 @@ model UsageDaily {
 
   @@unique([userId, day])
   @@index([day])
+}
+
+/// Monthly (or billing-period) meter: posts | shorts | generates
+model UsagePeriod {
+  id          String   @id @default(cuid())
+  userId      String
+  productCode String   @default("ditodio")
+  periodStart DateTime
+  meter       String
+  used        Int      @default(0)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productCode, periodStart, meter])
+  @@index([meter, periodStart])
+  @@index([userId, periodStart])
 }
 
 model ApiUsageDaily {

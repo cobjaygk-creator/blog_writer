@@ -4,7 +4,7 @@ import { getIntegrationsStatus } from "@/lib/integrations";
 
 export async function GET() {
   return NextResponse.json({
-    service: "blog_writer",
+    service: "ditodio",
     integrations: getIntegrationsStatus(),
     time: new Date().toISOString(),
   });

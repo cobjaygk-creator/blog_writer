@@ -20,7 +20,7 @@ import {
   captionToneOptions,
 } from "@/lib/caption-tones";
 import { attachToSlotLayout, imagesToSlots } from "@/lib/image-slots";
-import { buildNewCutDeepLink } from "@/lib/newcut";
+import { NewCutLink } from "@/components/NewCutLink";
 import { postStatusLabel } from "@/lib/post-status";
 import { applyTemplateToBody, type TemplateKind } from "@/lib/templates";
 import {
@@ -652,13 +652,6 @@ export function PostWorkspace({
     );
   }
 
-  const newCutUrl = buildNewCutDeepLink({
-    from: "blog_writer",
-    source: "blog",
-    brandId: post.brandId,
-    postId: post.id,
-  });
-
   const canCopy = Boolean(title.trim() || body.replace(/<[^>]+>/g, "").trim());
 
   return (
@@ -686,11 +679,11 @@ export function PostWorkspace({
           >
             {statusLabel}
           </Badge>
-          <a href={newCutUrl} target="_blank" rel="noopener noreferrer">
+          <NewCutLink brandId={post.brandId} postId={post.id}>
             <Button type="button" variant="outline" size="sm">
               New Cut 쇼츠 만들기
             </Button>
-          </a>
+          </NewCutLink>
         </div>
       </div>
 
