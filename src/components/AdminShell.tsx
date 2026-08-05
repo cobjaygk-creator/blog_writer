@@ -29,21 +29,26 @@ export function AdminShell({
   const pathname = usePathname() || "/admin";
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white">
+    <div className="min-h-screen bg-[var(--background)]">
+      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-4">
-            <Link href="/admin" className="text-sm font-semibold text-zinc-900">
+            <Link href="/admin" className="text-base font-bold text-[color:var(--foreground)]">
               Ditodio 관리
             </Link>
-            <span className="hidden text-[11px] text-zinc-400 sm:inline">
+            <span className="hidden text-[11px] text-[color:var(--muted)] sm:inline">
               통합 · 포스트 · 쇼츠
             </span>
-            <Link href="/dashboard" className="text-xs text-zinc-500 hover:text-zinc-800">
+            <Link
+              href="/dashboard"
+              className="text-xs text-[color:var(--muted)] hover:text-[var(--accent)]"
+            >
               ← 앱으로
             </Link>
           </div>
-          {email ? <p className="truncate text-xs text-zinc-500">{email}</p> : null}
+          {email ? (
+            <p className="truncate text-xs text-[color:var(--muted)]">{email}</p>
+          ) : null}
         </div>
       </header>
       <div className="mx-auto flex max-w-7xl gap-6 px-6 py-8">
@@ -58,10 +63,10 @@ export function AdminShell({
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "block rounded-md px-3 py-2",
+                    "block rounded-[8px] px-3 py-2",
                     active
-                      ? "bg-zinc-900 text-white"
-                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
+                      ? "bg-[var(--accent)] font-semibold text-white"
+                      : "text-[color:var(--muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]",
                   )}
                 >
                   {item.label}

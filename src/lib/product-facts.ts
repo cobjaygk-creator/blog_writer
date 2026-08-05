@@ -1,5 +1,7 @@
+import { getTavilyApiKey } from "@/lib/integration-config";
 import { chatCompletion } from "@/lib/llm";
 import { allowFallback, fetchWithTimeout, isLlmConfigured } from "@/lib/integrations";
+import { PRODUCT_TAIL } from "@/lib/product-entity";
 
 export type ProductFactCard = {
   productName: string;
@@ -23,12 +25,19 @@ export type ReviewTheme = {
 };
 
 const PRODUCTISH =
-  /(바디킷|머플러|썬팅|블랙박스|루프|하이리무진|페이스리프트|범퍼|그릴|매트|방음|튜닝|킷|램프|스포일러)/i;
+  /(바디킷|머플러|썬팅|블랙박스|루프|하이리무진|페이스리프트|범퍼|그릴|매트|방음|튜닝|킷|램프|스포일러|사이드스텝|휠|라이트)/i;
 
+const KEYWORD_FLUFF = /^(오늘|작업|후기|리뷰|시공|장착|사진|블로그|글)$/i;
+
+/** True when keyword is specific enough to justify web product research. */
 export function looksLikeProductKeyword(keyword: string) {
   const k = keyword.trim();
-  if (k.length < 4) return false;
-  return PRODUCTISH.test(k) || /[A-Za-z]{2,}/.test(k);
+  if (k.length < 3) return false;
+  if (KEYWORD_FLUFF.test(k)) return false;
+  if (PRODUCTISH.test(k) || PRODUCT_TAIL.test(k) || /[A-Za-z0-9]{2,}/.test(k)) return true;
+  // Clear Hangul phrases (e.g. "카니발 사이드스텝") — skip ultra-generic short tokens
+  if (k.length >= 6 && /[가-힣]{2,}/.test(k)) return true;
+  return false;
 }
 
 function normalizeHighlights(raw: string[]): string[] {
@@ -184,7 +193,7 @@ async function researchProductFacts(keyword: string): Promise<ProductFactCard> {
 }
 
 async function collectSearchSnippets(query: string): Promise<string[]> {
-  const tavilyKey = process.env.TAVILY_API_KEY?.trim();
+  const tavilyKey = await getTavilyApiKey();
   if (tavilyKey) {
     try {
       const res = await fetchWithTimeout(
@@ -245,7 +254,7 @@ export async function collectSearchHits(
   maxResults = 5,
   options?: { includeImages?: boolean },
 ): Promise<WebSearchHit[]> {
-  const tavilyKey = process.env.TAVILY_API_KEY?.trim();
+  const tavilyKey = await getTavilyApiKey();
   if (tavilyKey) {
     try {
       const res = await fetchWithTimeout(

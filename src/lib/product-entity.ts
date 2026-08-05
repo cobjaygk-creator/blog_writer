@@ -8,7 +8,7 @@ export type ProductEntityDetection = {
   confidence: number;
 };
 
-const PRODUCT_TAIL =
+export const PRODUCT_TAIL =
   /(바디킷|사이드스텝|머플러(?:팁)?|썬팅|블랙박스|루프(?:박스|탑|텐트)?|하이리무진|페이스리프트|범퍼|그릴|매트|방음|튜닝|스포일러|에어댐|휠|램프|라이트|하드탑|캐노피)/i;
 
 /**

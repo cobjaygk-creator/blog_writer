@@ -20,12 +20,15 @@ export default async function BrandsPage() {
   });
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-10">
+    <main className="mx-auto w-full max-w-5xl px-6 py-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">테마 등록</h1>
-          <p className="mt-2 text-sm text-zinc-600">
-            테마를 만들고 샘플 원문으로 문체를 학습합니다. 학습이 끝나면 새 글에서 글을 만들 수 있습니다.
+          <h1 className="text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
+            테마 등록
+          </h1>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">
+            테마를 만들고 샘플 원문으로 문체를 학습합니다. 학습이 끝나면 새 글에서 글을 만들 수
+            있습니다.
           </p>
         </div>
         <Link href="/brands/new">
@@ -34,8 +37,8 @@ export default async function BrandsPage() {
       </div>
 
       {brands.length === 0 ? (
-        <div className="mt-10 rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center">
-          <p className="text-sm text-zinc-600">아직 등록된 테마가 없습니다.</p>
+        <div className="mt-10 rounded-xl border border-dashed border-[var(--border)] bg-white px-4 py-10 text-center">
+          <p className="text-sm text-[color:var(--muted)]">아직 등록된 테마가 없습니다.</p>
           <Link href="/brands/new" className="mt-4 inline-block">
             <Button>테마 만들기</Button>
           </Link>
@@ -43,16 +46,19 @@ export default async function BrandsPage() {
       ) : (
         <ul className="mt-8 space-y-3">
           {brands.map((brand) => (
-            <li key={brand.id} className="rounded-xl border border-zinc-200 bg-white px-4 py-4">
+            <li
+              key={brand.id}
+              className="rounded-xl border border-[var(--border)] bg-white px-4 py-4 transition hover:border-[var(--accent)]"
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <Link
                     href={`/brands/${brand.id}`}
-                    className="text-base font-medium text-zinc-900 hover:underline"
+                    className="text-base font-semibold text-[color:var(--foreground)] hover:text-[var(--accent)]"
                   >
                     {brand.name}
                   </Link>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-zinc-500">
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-[color:var(--muted)]">
                     <span>원문 {brand._count.sourcePosts}</span>
                     <span>글 {brand._count.posts}</span>
                     {brand.styleProfile ? (

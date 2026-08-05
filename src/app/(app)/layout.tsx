@@ -19,9 +19,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     Boolean(session.user.email && adminEmails().has(session.user.email.trim().toLowerCase()));
 
   return (
-    <>
+    <div className="min-h-full bg-[var(--background)]">
       <AppNav email={session.user.email} planLabel={planLabel} isAdmin={isAdmin} />
       {children}
-    </>
+    </div>
   );
 }

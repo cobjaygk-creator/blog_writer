@@ -1,12 +1,17 @@
 import { chatCompletion } from "@/lib/llm";
 import { allowFallback, isLlmConfigured, llmMaxTokens } from "@/lib/integrations";
 import { prepareEditorHtml, SINGLE_IMAGE_STYLE, singleImageTag } from "@/lib/image-style";
+import type { DraftProvider, DraftTokenUsage } from "@/lib/llm-providers";
 import { normalizeExtendedTraits } from "@/lib/style-traits";
 import {
   getTopicLengthPreset,
   normalizeTopicLength,
   type TopicLength,
 } from "@/lib/topic-length";
+import {
+  formatResearchForPrompt,
+  type TopicResearchBrief,
+} from "@/lib/topic-research";
 
 export type TopicSection = {
   heading: string;
@@ -26,7 +31,13 @@ export type TopicDraftResult = {
   title: string;
   titleCandidates: string[];
   body: string;
-  meta: { usedFallback: boolean; provider: "llm" | "fallback" };
+  meta: {
+    usedFallback: boolean;
+    provider: "llm" | "fallback";
+    draftProvider?: DraftProvider;
+    modelId?: string;
+    tokenUsage?: DraftTokenUsage;
+  };
 };
 
 export type TopicImageSlot = {
@@ -44,6 +55,9 @@ export async function planTopicDraft(input: {
   length?: TopicLength | string | null;
   styleSummary?: string | null;
   traitsJson?: unknown;
+  research?: TopicResearchBrief | null;
+  sampleAnchors?: Array<{ excerpt: string }>;
+  similarSources?: Array<{ title: string | null; excerpt: string }>;
 }): Promise<TopicPlan> {
   const preset = getTopicLengthPreset(input.length);
   const count = Math.min(
@@ -51,6 +65,17 @@ export async function planTopicDraft(input: {
     Math.max(1, Math.floor(input.imageCount ?? preset.sectionCount) || preset.sectionCount),
   );
   const traits = normalizeExtendedTraits(input.traitsJson);
+  const researchBlock = input.research
+    ? formatResearchForPrompt(input.research)
+    : "(검색 리서치 없음 — 일반론·추측 수치 금지)";
+  const anchors = (input.sampleAnchors || [])
+    .slice(0, 3)
+    .map((a, i) => `샘플${i + 1}: ${a.excerpt.slice(0, 280)}`)
+    .join("\n") || "(없음)";
+  const similar = (input.similarSources || [])
+    .slice(0, 2)
+    .map((s, i) => `유사${i + 1}${s.title ? ` · ${s.title}` : ""}: ${s.excerpt.slice(0, 320)}`)
+    .join("\n") || "(없음)";
 
   if (!isLlmConfigured()) {
     if (!allowFallback()) throw new Error("LLM_API_KEY가 설정되지 않았습니다.");
@@ -64,10 +89,11 @@ export async function planTopicDraft(input: {
           role: "system",
           content: `당신은 한국어 블로그 기획자입니다. JSON만 반환.
 키: title(string), titleCandidates(string[] 3개), disclaimer(string|null), sections(array 길이 정확히 ${count}).
-각 section: heading(string), bulletPoints(string[] ${preset.bulletMin}~${preset.bulletMax}개, 구체적·중복 금지), sceneKeyword(한국어 짧은 장면 키워드), imagePrompt(영어, 블로그용 일러스트/인포그래픽 스타일 이미지 프롬프트, 텍스트·워터마크·실존 인물 얼굴 과다 금지).
+각 section: heading(string), bulletPoints(string[] ${preset.bulletMin}~${preset.bulletMax}개, 구체적·중복 금지 — 가능하면 검색 팩트를 반영), sceneKeyword(한국어 짧은 장면 키워드), imagePrompt(영어, 블로그용 일러스트/인포그래픽 스타일 이미지 프롬프트, 텍스트·워터마크·실존 인물 얼굴 과다 금지).
 목표 분량: ${preset.label} (${preset.targetChars.min}~${preset.targetChars.max}자 분량의 글을 쓸 수 있게 섹션·포인트를 충분히 촘촘히).
 금융·투자·의료·법률 주제면 disclaimer에 한 줄 면책(예: 투자 조언이 아님)을 넣고, 아니면 null.
-과장·허위 수치·출처 없는 단정 금지. 설명형·읽기 쉬운 구성.`,
+과장·허위 수치·출처 없는 단정 금지. 검색 팩트에 없는 수치/날짜를 만들지 마세요. 설명형·읽기 쉬운 구성.
+테마 샘플·유사 원문의 말투/용어 힌트를 반영하되 문장 복붙 금지.`,
         },
         {
           role: "user",
@@ -75,9 +101,21 @@ export async function planTopicDraft(input: {
 브랜드/채널: ${input.brandName}
 문체 힌트: ${input.styleSummary?.trim() || "(기본 친근 설명 톤)"}
 톤: ${traits.tone}
+오프닝/클로징: ${traits.openerStyle} / ${traits.closerStyle}
+학습 용어: ${(traits.domainTerms || []).slice(0, 12).join(", ") || "(없음)"}
+학습 CTA: ${(traits.ctaPhrases || []).slice(0, 4).join(" / ") || "(없음)"}
+금지 표현: ${(traits.bannedFluff || []).slice(0, 6).join(" / ") || "(없음)"}
 글 길이: ${preset.label} — ${preset.hint}
 섹션 수(=이미지 수): ${count}
-섹션당 포인트: ${preset.bulletMin}~${preset.bulletMax}개`,
+섹션당 포인트: ${preset.bulletMin}~${preset.bulletMax}개
+
+${researchBlock}
+
+원문 샘플(말투 참고):
+${anchors}
+
+유사 원문(용어·흐름 참고):
+${similar}`,
         },
       ],
       {
@@ -104,16 +142,32 @@ export async function generateTopicBlogDraft(input: {
   length?: TopicLength | string | null;
   styleSummary?: string | null;
   traitsJson?: unknown;
+  research?: TopicResearchBrief | null;
+  sampleAnchors?: Array<{ excerpt: string }>;
+  similarSources?: Array<{ title: string | null; excerpt: string }>;
+  draftProvider?: DraftProvider;
 }): Promise<TopicDraftResult> {
+  const draftProvider = input.draftProvider || "gpt";
   const traits = normalizeExtendedTraits(input.traitsJson);
   const preset = getTopicLengthPreset(input.length);
   const lengthId = normalizeTopicLength(input.length);
+  const researchBlock = input.research
+    ? formatResearchForPrompt(input.research)
+    : "(검색 리서치 없음 — 일반론·추측 수치 금지)";
+  const anchors = (input.sampleAnchors || [])
+    .slice(0, 3)
+    .map((a, i) => `샘플${i + 1}: ${a.excerpt.slice(0, 280)}`)
+    .join("\n") || "(없음)";
+  const similar = (input.similarSources || [])
+    .slice(0, 2)
+    .map((s, i) => `유사${i + 1}${s.title ? ` · ${s.title}` : ""}: ${s.excerpt.slice(0, 320)}`)
+    .join("\n") || "(없음)";
 
   if (!isLlmConfigured()) {
     if (!allowFallback()) throw new Error("LLM_API_KEY가 설정되지 않았습니다.");
     return {
       ...fallbackTopicBody(input),
-      meta: { usedFallback: true, provider: "fallback" },
+      meta: { usedFallback: true, provider: "fallback", draftProvider },
     };
   }
 
@@ -129,20 +183,20 @@ ${bullets || "  - (없음)"}`;
     .join("\n\n");
 
   try {
-    const { text } = await chatCompletion(
+    const chat = await chatCompletion(
       [
         {
           role: "system",
           content: `당신은 한국어 블로그 작가입니다. JSON만 반환. 키: title, titleCandidates(string[]), body(HTML).
 규칙:
 1) HTML만 (마크다운 금지). 허용: p, br, h2, h3, strong, em, ul, li, span, img
-2) 설명형·읽기 쉬운 톤. 시공/작업기 말투 금지. "다음에도 유익한 정보로 돌아오겠습니다" 류 상투 문구 금지.
+2) 톤은 제공된 테마 말투(${traits.tone})를 따르세요. 상투 문구("다음에도 유익한 정보로…")와 bannedFluff 금지.
 3) 제공된 이미지 URL만 사용. 임의 URL 금지. URL이 "(없음)"이면 해당 섹션은 텍스트만.
 4) 이미지: <p><img src="URL" alt="장면키워드" style="${SINGLE_IMAGE_STYLE}" /></p>
 5) 스톡/AI 이미지는 분위기·설명 보조. "실제 촬영/공식 자료"처럼 단정하지 말 것.
-6) 수치·사실은 과장하지 말 것. disclaimer가 있으면 도입 또는 마무리에 한 줄 포함.
-7) 이모지·<strong>·색 span을 적당히 사용. 밋밋한 plain만 쓰지 말 것.
-8) 구조: 도입(2~3문단) → 각 섹션(h2 + ${preset.paragraphsPerSection} + 이미지) → 실용 팁/요약 → 마무리.
+6) 수치·사실은 검색 팩트·섹션 포인트에 근거. 없는 수치/날짜 금지. disclaimer가 있으면 도입 또는 마무리에 한 줄.
+7) 이모지·강조는 학습 emojiUsage(${traits.emojiUsage})에 맞게. 색은 colorPalette.
+8) 구조: 도입(2~3문단) → 각 섹션(h2 + ${preset.paragraphsPerSection} + 이미지) → 실용 팁/요약 → 마무리. 하단에 참고 소스는 목록에 있는 URL만.
 9) 분량(필수): ${preset.label}. 본문 순수 텍스트 기준 약 ${preset.targetChars.min}~${preset.targetChars.max}자.
    짧게 요약만 쓰지 마세요. 각 섹션 포인트를 문장으로 충분히 풀어 쓰세요.
    ${lengthId === "long" ? "구체 예시, 왜 그런지, 실생활 적용을 넣으세요." : ""}
@@ -156,22 +210,34 @@ ${bullets || "  - (없음)"}`;
 면책: ${input.plan.disclaimer || "(없음)"}
 글 길이 목표: ${preset.label} (${preset.targetChars.min}~${preset.targetChars.max}자)
 문체 요약: ${input.styleSummary?.trim() || traits.tone}
-편집 힌트: tone=${traits.tone}, opener=${traits.openerStyle}, closer=${traits.closerStyle}
+편집 힌트: tone=${traits.tone}, opener=${traits.openerStyle}, closer=${traits.closerStyle}, lineBreak=${traits.lineBreakStyle}
+학습 용어: ${(traits.domainTerms || []).slice(0, 12).join(", ") || "(없음)"}
+학습 CTA: ${(traits.ctaPhrases || []).slice(0, 4).join(" / ") || "(없음)"}
+금지 표현: ${(traits.bannedFluff || []).slice(0, 6).join(" / ") || "(없음)"}
 색 예시: ${(traits.colorPalette || []).join(", ") || "#0B7285"}
+
+${researchBlock}
+
+원문 샘플(말투 참고, 복붙 금지):
+${anchors}
+
+유사 원문(용어·흐름 참고, 사실 복붙 금지):
+${similar}
 
 섹션·이미지:
 ${slotLines}
 
-요청: 위 섹션 순서로 본문을 쓰고, 이미지 URL이 있는 섹션에는 이미지를 넣으세요. 목표 분량을 맞추세요.`,
+요청: 위 섹션 순서로 본문을 쓰고, 검색 팩트를 자연스럽게 녹이세요. 이미지 URL이 있는 섹션에는 이미지를 넣으세요. 목표 분량을 맞추세요.`,
         },
       ],
       {
         json: true,
         temperature: 0.55,
         maxTokens: Math.max(llmMaxTokens(), preset.draftMaxTokens),
+        draftProvider,
       },
     );
-    const parsed = JSON.parse(text) as Partial<TopicDraftResult>;
+    const parsed = JSON.parse(chat.text) as Partial<TopicDraftResult>;
     const title =
       typeof parsed.title === "string" && parsed.title.trim()
         ? parsed.title.trim()
@@ -187,14 +253,20 @@ ${slotLines}
       title,
       titleCandidates: titleCandidates.length ? titleCandidates : [title],
       body: prepareEditorHtml(unwrapHtml(rawBody)),
-      meta: { usedFallback: false, provider: "llm" },
+      meta: {
+        usedFallback: false,
+        provider: "llm",
+        draftProvider,
+        modelId: chat.modelId,
+        tokenUsage: chat.tokenUsage,
+      },
     };
   } catch (error) {
     if (!allowFallback()) throw error;
     console.warn("[topic-draft] failed, using fallback:", error);
     return {
       ...fallbackTopicBody(input),
-      meta: { usedFallback: true, provider: "fallback" },
+      meta: { usedFallback: true, provider: "fallback", draftProvider },
     };
   }
 }

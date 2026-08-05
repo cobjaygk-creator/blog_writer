@@ -1,12 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Inter, Noto_Sans_KR } from "next/font/google";
+import type { CSSProperties } from "react";
 
 import { Providers } from "@/components/Providers";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const sans = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
+});
+
+const sansKr = Noto_Sans_KR({
+  variable: "--font-noto-kr",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -27,9 +36,15 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${sans.variable} ${sansKr.variable} ${geistMono.variable} h-full antialiased`}
+      style={
+        {
+          ["--font-sans-app" as string]:
+            "var(--font-inter), var(--font-noto-kr), sans-serif",
+        } as CSSProperties
+      }
     >
-      <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900">
+      <body className="flex min-h-full flex-col bg-background text-foreground">
         <Providers>{children}</Providers>
       </body>
     </html>

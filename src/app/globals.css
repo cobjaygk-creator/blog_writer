@@ -1,21 +1,35 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
+  --background: #f7f7f8;
+  --foreground: rgba(0, 0, 0, 0.85);
+  --surface: #ffffff;
+  --muted: rgba(0, 0, 0, 0.55);
+  --border: #efeff0;
+  --accent: #5e56f0;
+  --accent-hover: #4e40c9;
+  --accent-soft: #5e56f01a;
+  --radius-control: 10px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --font-sans: var(--font-sans-app);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans-app), "Noto Sans KR", ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
 }
 
 .rich-doc {

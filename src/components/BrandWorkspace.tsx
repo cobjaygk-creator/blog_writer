@@ -264,24 +264,24 @@ export function BrandWorkspace({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>원문 등록</CardTitle>
-          <div className="flex rounded-lg border border-zinc-200 p-0.5 text-xs">
+          <div className="flex rounded-lg border border-[var(--border)] p-0.5 text-xs">
             <button
               type="button"
-              className={`rounded-md px-3 py-1.5 ${sourceMode === "bulk" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+              className={`rounded-md px-3 py-1.5 ${sourceMode === "bulk" ? "bg-[var(--accent)] text-white" : "text-[color:var(--muted)]"}`}
               onClick={() => setSourceMode("bulk")}
             >
               블로그 일괄
             </button>
             <button
               type="button"
-              className={`rounded-md px-3 py-1.5 ${sourceMode === "url" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+              className={`rounded-md px-3 py-1.5 ${sourceMode === "url" ? "bg-[var(--accent)] text-white" : "text-[color:var(--muted)]"}`}
               onClick={() => setSourceMode("url")}
             >
               URL
             </button>
             <button
               type="button"
-              className={`rounded-md px-3 py-1.5 ${sourceMode === "text" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+              className={`rounded-md px-3 py-1.5 ${sourceMode === "text" ? "bg-[var(--accent)] text-white" : "text-[color:var(--muted)]"}`}
               onClick={() => setSourceMode("text")}
             >
               붙여넣기
@@ -301,7 +301,7 @@ export function BrandWorkspace({
                   placeholder="https://blog.naver.com/블로그ID"
                   disabled={busy === "bulk"}
                 />
-                <span className="block text-xs font-normal text-zinc-500">
+                <span className="block text-xs font-normal text-[color:var(--muted)]">
                   최신 공개글 최대 100개를 가져와 원문으로 저장하고, 말투·용어·제품·편집 습관을 심화 학습합니다.
                   본인 운영 블로그의 공개글만 사용해 주세요.
                 </span>
@@ -316,7 +316,7 @@ export function BrandWorkspace({
                   : "일괄 가져오기 + 학습"}
               </Button>
               {importProgress ? (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-[color:var(--muted)]">
                   성공 {importProgress.fetchedCount} · 중복/스킵 {importProgress.skippedCount} · 실패{" "}
                   {importProgress.failedCount}
                   {importProgress.status === "completed" ? " · 완료" : ""}
@@ -335,7 +335,7 @@ export function BrandWorkspace({
                     onChange={(e) => setSourceUrl(e.target.value)}
                     placeholder="https://blog.naver.com/... 또는 일반 블로그 URL"
                   />
-                  <span className="block text-xs font-normal text-zinc-500">
+                  <span className="block text-xs font-normal text-[color:var(--muted)]">
                     글 하나만 가져와 문체 학습용 원문으로 저장합니다.
                   </span>
                 </Label>
@@ -363,25 +363,25 @@ export function BrandWorkspace({
           )}
 
           {sources.length === 0 ? (
-            <p className="text-sm text-zinc-500">등록된 원문이 없습니다.</p>
+            <p className="text-sm text-[color:var(--muted)]">등록된 원문이 없습니다.</p>
           ) : (
             <ul className="space-y-3">
               {sources.map((source) => (
-                <li key={source.id} className="rounded-lg border border-zinc-200 p-3">
+                <li key={source.id} className="rounded-lg border border-[var(--border)] p-3">
                   {source.title ? (
-                    <p className="mb-1 text-sm font-medium text-zinc-800">{source.title}</p>
+                    <p className="mb-1 text-sm font-medium text-[color:var(--foreground)]">{source.title}</p>
                   ) : null}
                   {source.sourceUrl ? (
                     <a
                       href={source.sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mb-2 block truncate text-xs text-zinc-500 hover:underline"
+                      className="mb-2 block truncate text-xs text-[color:var(--muted)] hover:underline"
                     >
                       {source.sourceUrl}
                     </a>
                   ) : null}
-                  <p className="whitespace-pre-wrap text-sm text-zinc-700 line-clamp-4">{source.rawText}</p>
+                  <p className="whitespace-pre-wrap text-sm text-[color:var(--foreground)] line-clamp-4">{source.rawText}</p>
                   <div className="mt-2 flex justify-end">
                     <Button
                       type="button"
@@ -409,18 +409,18 @@ export function BrandWorkspace({
         </CardHeader>
         <CardContent>
           {!style ? (
-            <p className="text-sm text-zinc-500">아직 학습된 스타일이 없습니다. 원문을 추가한 뒤 학습하세요.</p>
+            <p className="text-sm text-[color:var(--muted)]">아직 학습된 스타일이 없습니다. 원문을 추가한 뒤 학습하세요.</p>
           ) : (
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-2">
                 <Badge>v{style.version}</Badge>
-                <span className="text-zinc-500">
+                <span className="text-[color:var(--muted)]">
                   {new Date(style.updatedAt).toLocaleString("ko-KR")}
                 </span>
               </div>
-              <p className="whitespace-pre-wrap leading-6 text-zinc-800">{style.summaryText}</p>
+              <p className="whitespace-pre-wrap leading-6 text-[color:var(--foreground)]">{style.summaryText}</p>
               <StyleTraitsView traits={style.traitsJson} />
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-[color:var(--muted)]">
                 학습이 끝나면 상단 메뉴의 <strong>새 글</strong>에서 이 테마 문체로 글을 만들 수 있습니다.
               </p>
             </div>
@@ -438,7 +438,7 @@ export function BrandWorkspace({
           </Link>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-600">
+          <p className="text-sm text-[color:var(--muted)]">
             자주 쓰는 인사말·맺음말을 템플릿으로 저장해 두고, 포스트 편집에서 선택 후 적용할 수 있습니다.
           </p>
         </CardContent>
@@ -457,17 +457,17 @@ export function BrandWorkspace({
         </CardHeader>
         <CardContent className="space-y-3">
           {style ? (
-            <p className="text-sm text-zinc-600">
+            <p className="text-sm text-[color:var(--muted)]">
               문체 학습이 완료되었습니다. 새 글에서 이 테마를 선택해 글을 만드세요.
             </p>
           ) : (
             <p className="text-sm text-amber-700">샘플 원문을 넣고 문체 학습을 마치면 글을 만들 수 있습니다.</p>
           )}
           {posts.length > 0 ? (
-            <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200">
+            <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
               {posts.map((post) => (
                 <li key={post.id} className="flex items-center justify-between px-3 py-2.5 text-sm">
-                  <Link href={`/posts/${post.id}`} className="font-medium text-zinc-900 hover:underline">
+                  <Link href={`/posts/${post.id}`} className="font-medium text-[color:var(--foreground)] hover:underline">
                     {post.title || post.keyword || "(제목 없음)"}
                   </Link>
                   <Badge>{postStatusLabel(post.status)}</Badge>
@@ -475,7 +475,7 @@ export function BrandWorkspace({
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-zinc-500">이 테마로 만든 글은 아직 없습니다.</p>
+            <p className="text-sm text-[color:var(--muted)]">이 테마로 만든 글은 아직 없습니다.</p>
           )}
         </CardContent>
       </Card>
@@ -486,7 +486,7 @@ export function BrandWorkspace({
 function StyleTraitsView({ traits }: { traits: unknown }) {
   const t = normalizeExtendedTraits(traits);
   return (
-    <div className="grid gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-700 sm:grid-cols-2">
+    <div className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[color:var(--foreground)] sm:grid-cols-2">
       <Trait label="톤" value={t.tone} />
       <Trait label="문장" value={t.sentenceLength} />
       <Trait label="줄바꿈" value={t.lineBreakStyle} />
@@ -495,11 +495,11 @@ function StyleTraitsView({ traits }: { traits: unknown }) {
       <Trait label="강조" value={t.emphasisStyle} />
       <Trait label="글자 크기" value={t.fontSizes.join(", ") || "-"} />
       <div>
-        <p className="font-medium text-zinc-500">강조색</p>
+        <p className="font-medium text-[color:var(--muted)]">강조색</p>
         <div className="mt-1 flex flex-wrap gap-1.5">
           {t.colorPalette.map((c) => (
             <span key={c} className="inline-flex items-center gap-1">
-              <span className="inline-block h-3.5 w-3.5 rounded-full border border-zinc-300" style={{ backgroundColor: c }} />
+              <span className="inline-block h-3.5 w-3.5 rounded-full border border-[var(--border)]" style={{ backgroundColor: c }} />
               {c}
             </span>
           ))}
@@ -521,8 +521,8 @@ function StyleTraitsView({ traits }: { traits: unknown }) {
 function Trait({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="font-medium text-zinc-500">{label}</p>
-      <p className="mt-0.5 leading-5 text-zinc-800">{value}</p>
+      <p className="font-medium text-[color:var(--muted)]">{label}</p>
+      <p className="mt-0.5 leading-5 text-[color:var(--foreground)]">{value}</p>
     </div>
   );
 }

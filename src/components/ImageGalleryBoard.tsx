@@ -214,7 +214,7 @@ export function ImageGalleryBoard({
   }
 
   if (!images.length) {
-    return <p className="text-sm text-zinc-500">아직 업로드된 사진이 없습니다.</p>;
+    return <p className="text-sm text-[color:var(--muted)]">아직 업로드된 사진이 없습니다.</p>;
   }
 
   const draggingSlot = drag ? slots.find((s) => s.id === drag.slotId) : null;
@@ -222,7 +222,7 @@ export function ImageGalleryBoard({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-[color:var(--muted)]">
         각 <strong>단락</strong>은 사진 1장 이상 + 캡션 1개입니다. 사진을 드래그해 순서를 바꾸거나 다른 단락에
         겹치면 묶을 수 있습니다(최대 {MAX_IMAGE_GROUP_SIZE}장). 썸네일을 클릭하면 크게 볼 수 있습니다.
       </p>
@@ -246,9 +246,9 @@ export function ImageGalleryBoard({
                 if (drag?.pointerId === e.pointerId) setDrag(null);
               }}
               className={cn(
-                "relative touch-none rounded-xl border border-zinc-200 bg-white p-3 transition",
+                "relative touch-none rounded-xl border border-[var(--border)] bg-white p-3 transition",
                 isDragging && "opacity-40",
-                isMergeTarget && "border-amber-400 ring-2 ring-amber-300",
+                isMergeTarget && "border-[var(--accent)] ring-2 ring-[color:var(--accent-soft)]",
                 !busy && "cursor-grab active:cursor-grabbing",
               )}
             >
@@ -293,14 +293,14 @@ export function ImageGalleryBoard({
 
       {drag && draggingSlot ? (
         <div
-          className="pointer-events-none fixed z-50 w-40 overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-xl"
+          className="pointer-events-none fixed z-50 w-40 overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-xl"
           style={{ left: drag.x + 12, top: drag.y + 12 }}
         >
           {draggingSlot.kind === "single" ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={draggingSlot.image.imageUrl} alt="" className="h-24 w-full object-cover" />
           ) : (
-            <div className="grid grid-cols-2 gap-0.5 bg-zinc-100 p-0.5">
+            <div className="grid grid-cols-2 gap-0.5 bg-[var(--background)] p-0.5">
               {draggingSlot.images.slice(0, 4).map((img) => (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img key={img.id} src={img.imageUrl} alt="" className="h-12 w-full object-cover" />
@@ -397,14 +397,14 @@ function AddImageDialog({
         role="dialog"
         aria-modal="true"
         aria-label="이미지 추가"
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-zinc-200 bg-white p-4 shadow-xl"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-base font-semibold text-zinc-900">이미지 추가</h3>
-            <p className="mt-1 text-xs text-zinc-500">
+            <h3 className="text-base font-semibold text-[color:var(--foreground)]">이미지 추가</h3>
+            <p className="mt-1 text-xs text-[color:var(--muted)]">
               이 단락에 최대 {remain}장까지 더 넣을 수 있습니다. (단락당 최대 {MAX_IMAGE_GROUP_SIZE}장)
             </p>
           </div>
@@ -415,15 +415,15 @@ function AddImageDialog({
 
         <div className="space-y-4">
           <div>
-            <p className="mb-2 text-sm font-medium text-zinc-800">새 사진 업로드</p>
+            <p className="mb-2 text-sm font-medium text-[color:var(--foreground)]">새 사진 업로드</p>
             <button
               type="button"
               disabled={Boolean(busy) || submitting || remain <= 0}
               onClick={() => inputRef.current?.click()}
-              className="flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-4 py-6 text-center hover:border-zinc-400 hover:bg-zinc-100 disabled:opacity-60"
+              className="flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--background)] px-4 py-6 text-center hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-60"
             >
-              <span className="text-sm font-medium text-zinc-800">클릭해서 사진 선택</span>
-              <span className="mt-1 text-xs text-zinc-500">JPEG, PNG, WebP, GIF · 여러 장 가능</span>
+              <span className="text-sm font-medium text-[color:var(--foreground)]">클릭해서 사진 선택</span>
+              <span className="mt-1 text-xs text-[color:var(--muted)]">JPEG, PNG, WebP, GIF · 여러 장 가능</span>
             </button>
             <input
               ref={inputRef}
@@ -444,7 +444,7 @@ function AddImageDialog({
                     <img src={url} alt="" className="h-16 w-16 rounded-lg object-cover" />
                     <button
                       type="button"
-                      className="absolute -right-1 -top-1 rounded-full bg-zinc-900 px-1.5 text-[10px] text-white"
+                      className="absolute -right-1 -top-1 rounded-full bg-[var(--accent)] px-1.5 text-[10px] text-white"
                       onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
                     >
                       ×
@@ -457,7 +457,7 @@ function AddImageDialog({
 
           {candidates.length > 0 ? (
             <div>
-              <p className="mb-2 text-sm font-medium text-zinc-800">이미 올린 사진에서 고르기</p>
+              <p className="mb-2 text-sm font-medium text-[color:var(--foreground)]">이미 올린 사진에서 고르기</p>
               <div className="grid grid-cols-4 gap-2">
                 {candidates.map((img) => {
                   const selected = selectedIds.includes(img.id);
@@ -468,7 +468,9 @@ function AddImageDialog({
                       onClick={() => toggleSelect(img.id)}
                       className={cn(
                         "overflow-hidden rounded-lg border-2",
-                        selected ? "border-amber-500 ring-2 ring-amber-200" : "border-transparent",
+                        selected
+                          ? "border-[var(--accent)] ring-2 ring-[color:var(--accent-soft)]"
+                          : "border-transparent",
                       )}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -539,11 +541,11 @@ function ParagraphRow({
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             {slot.kind === "group" ? (
-              <p className="mr-auto text-sm font-medium text-zinc-800">
-                단락 <span className="font-normal text-zinc-500">({images.length}장)</span>
+              <p className="mr-auto text-sm font-medium text-[color:var(--foreground)]">
+                단락 <span className="font-normal text-[color:var(--muted)]">({images.length}장)</span>
               </p>
             ) : (
-              <p className="mr-auto text-sm font-medium text-zinc-800">단락</p>
+              <p className="mr-auto text-sm font-medium text-[color:var(--foreground)]">단락</p>
             )}
             {onUngroup ? (
               <Button type="button" size="sm" variant="outline" disabled={Boolean(busy)} onClick={onUngroup}>
@@ -627,7 +629,7 @@ function ParagraphThumbs({
   return (
     <div
       className={cn(
-        "grid h-36 gap-0.5 overflow-hidden rounded-lg bg-zinc-100",
+        "grid h-36 gap-0.5 overflow-hidden rounded-lg bg-[var(--background)]",
         gridClass,
         count === 3 && "grid-rows-2",
         count === 4 && "grid-rows-2",

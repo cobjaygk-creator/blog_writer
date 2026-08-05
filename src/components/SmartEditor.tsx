@@ -154,7 +154,7 @@ export function SmartEditor({
   }, [revision, value]);
 
   return (
-    <div className={cn("bw-smart-editor overflow-hidden rounded-lg border border-zinc-200 bg-white", className)}>
+    <div className={cn("bw-smart-editor overflow-hidden rounded-lg border border-[var(--border)] bg-white", className)}>
       <div ref={mountRef} />
     </div>
   );

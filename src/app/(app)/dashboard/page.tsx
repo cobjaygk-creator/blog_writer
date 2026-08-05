@@ -49,15 +49,20 @@ export default async function DashboardPage() {
   const limits = getPlanLimits(plan, session!.user!.email);
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-6 py-12">
+    <main className="mx-auto w-full max-w-5xl px-6 py-10">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">대시보드</h1>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="text-sm font-semibold text-[var(--accent)]">Ditodio</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
+            대시보드
+          </h1>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">
             {session!.user!.email}
-            <span className="mx-2 text-zinc-300">·</span>
-            <span className="uppercase tracking-wide">{unlimited ? "unlimited" : plan}</span>
-            <span className="ml-2 text-zinc-500">
+            <span className="mx-2 text-[var(--border)]">·</span>
+            <span className="font-medium uppercase tracking-wide text-[var(--accent)]">
+              {unlimited ? "unlimited" : plan}
+            </span>
+            <span className="ml-2">
               {unlimited
                 ? "사용한도 무제한"
                 : `테마 ${limits.brands} · 원문/테마 ${limits.sourcePostsPerBrand} · 이미지/글 ${limits.imagesPerPost}`}
@@ -72,7 +77,7 @@ export default async function DashboardPage() {
       </div>
 
       {dbError ? (
-        <p className="mt-8 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p className="mt-8 rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {dbError}
         </p>
       ) : null}
@@ -80,23 +85,23 @@ export default async function DashboardPage() {
       <section className="mt-10 grid gap-3 sm:grid-cols-2">
         <Link
           href="/brands"
-          className="rounded-xl border border-zinc-200 bg-white px-5 py-5 transition hover:border-zinc-300"
+          className="rounded-xl border border-[var(--border)] bg-white px-5 py-5 transition hover:border-[var(--accent)] hover:shadow-[0_8px_24px_rgba(94,86,240,0.08)]"
         >
-          <h2 className="text-lg font-medium text-zinc-900">테마 등록</h2>
-          <p className="mt-2 text-sm text-zinc-600">테마 추가 · 샘플 원문 · 문체 학습</p>
+          <h2 className="text-lg font-semibold text-[color:var(--foreground)]">테마 등록</h2>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">테마 추가 · 샘플 원문 · 문체 학습</p>
         </Link>
         <Link
           href="/posts/new"
-          className="rounded-xl border border-zinc-200 bg-white px-5 py-5 transition hover:border-zinc-300"
+          className="rounded-xl border border-[var(--border)] bg-white px-5 py-5 transition hover:border-[var(--accent)] hover:shadow-[0_8px_24px_rgba(94,86,240,0.08)]"
         >
-          <h2 className="text-lg font-medium text-zinc-900">새 글</h2>
-          <p className="mt-2 text-sm text-zinc-600">테마·톤을 고른 뒤 초안 만들기</p>
+          <h2 className="text-lg font-semibold text-[color:var(--foreground)]">새 글</h2>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">테마·톤을 고른 뒤 초안 만들기</p>
         </Link>
       </section>
 
       <section className="mt-10">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium text-zinc-900">테마</h2>
+          <h2 className="text-lg font-semibold text-[color:var(--foreground)]">테마</h2>
           <Link href="/brands">
             <Button size="sm" variant="outline">
               전체 보기
@@ -104,17 +109,23 @@ export default async function DashboardPage() {
           </Link>
         </div>
         {brands.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-sm text-zinc-500">
+          <p className="mt-4 rounded-xl border border-dashed border-[var(--border)] bg-white px-4 py-8 text-sm text-[color:var(--muted)]">
             등록된 테마가 없습니다. 테마 등록에서 만들고 샘플로 문체를 학습하세요.
           </p>
         ) : (
           <ul className="mt-4 grid gap-3 sm:grid-cols-2">
             {brands.map((brand) => (
-              <li key={brand.id} className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
-                <Link href={`/brands/${brand.id}`} className="font-medium text-zinc-900 hover:underline">
+              <li
+                key={brand.id}
+                className="rounded-xl border border-[var(--border)] bg-white px-4 py-3 transition hover:border-[var(--accent)]"
+              >
+                <Link
+                  href={`/brands/${brand.id}`}
+                  className="font-semibold text-[color:var(--foreground)] hover:text-[var(--accent)]"
+                >
                   {brand.name}
                 </Link>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs text-zinc-500">
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-[color:var(--muted)]">
                   <span>원문 {brand._count.sourcePosts}</span>
                   <span>글 {brand._count.posts}</span>
                   {brand.styleProfile ? (
@@ -131,7 +142,7 @@ export default async function DashboardPage() {
 
       <section className="mt-10">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium text-zinc-900">최근 글</h2>
+          <h2 className="text-lg font-semibold text-[color:var(--foreground)]">최근 글</h2>
           <div className="flex gap-2">
             <Link href="/posts">
               <Button size="sm" variant="outline">
@@ -144,12 +155,15 @@ export default async function DashboardPage() {
           </div>
         </div>
         {posts.length === 0 ? (
-          <p className="mt-4 text-sm text-zinc-500">아직 생성된 글이 없습니다.</p>
+          <p className="mt-4 text-sm text-[color:var(--muted)]">아직 생성된 글이 없습니다.</p>
         ) : (
-          <ul className="mt-4 divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">
+          <ul className="mt-4 divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] bg-white">
             {posts.map((post) => (
               <li key={post.id} className="flex items-center justify-between px-4 py-3 text-sm">
-                <Link href={`/posts/${post.id}`} className="font-medium text-zinc-900 hover:underline">
+                <Link
+                  href={`/posts/${post.id}`}
+                  className="font-medium text-[color:var(--foreground)] hover:text-[var(--accent)]"
+                >
                   {post.title || "(제목 없음)"}
                 </Link>
                 <Badge>{postStatusLabel(post.status)}</Badge>

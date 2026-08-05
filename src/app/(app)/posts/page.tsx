@@ -15,6 +15,7 @@ export default async function PostsListPage() {
     title: string | null;
     keyword: string | null;
     status: string;
+    publishedUrl: string | null;
     createdAt: Date;
     brand: { name: string };
   }> = [];
@@ -30,6 +31,7 @@ export default async function PostsListPage() {
         title: true,
         keyword: true,
         status: true,
+        publishedUrl: true,
         createdAt: true,
         brand: { select: { name: true } },
       },
@@ -39,11 +41,15 @@ export default async function PostsListPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-10">
+    <main className="mx-auto w-full max-w-5xl px-6 py-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">글 목록</h1>
-          <p className="mt-2 text-sm text-zinc-600">최근에 만든 글을 열고 이어서 편집하세요.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
+            글 목록
+          </h1>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">
+            최근에 만든 글을 열고 이어서 편집하세요.
+          </p>
         </div>
         <Link href="/posts/new">
           <Button>새 글</Button>
@@ -51,33 +57,44 @@ export default async function PostsListPage() {
       </div>
 
       {dbError ? (
-        <p className="mt-8 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p className="mt-8 rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {dbError}
         </p>
       ) : null}
 
       {posts.length === 0 && !dbError ? (
-        <div className="mt-10 rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center">
-          <p className="text-sm text-zinc-600">아직 만든 글이 없습니다.</p>
+        <div className="mt-10 rounded-xl border border-dashed border-[var(--border)] bg-white px-4 py-10 text-center">
+          <p className="text-sm text-[color:var(--muted)]">아직 만든 글이 없습니다.</p>
           <Link href="/posts/new" className="mt-4 inline-block">
             <Button>새 글 만들기</Button>
           </Link>
         </div>
       ) : (
-        <ul className="mt-8 divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">
+        <ul className="mt-8 divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] bg-white">
           {posts.map((post) => (
-            <li key={post.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+            <li
+              key={post.id}
+              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
+            >
               <div className="min-w-0">
-                <Link href={`/posts/${post.id}`} className="font-medium text-zinc-900 hover:underline">
+                <Link
+                  href={`/posts/${post.id}`}
+                  className="font-semibold text-[color:var(--foreground)] hover:text-[var(--accent)]"
+                >
                   {post.title || post.keyword || "(제목 없음)"}
                 </Link>
-                <p className="mt-0.5 text-xs text-zinc-500">
+                <p className="mt-0.5 text-xs text-[color:var(--muted)]">
                   {post.brand.name}
-                  <span className="mx-1.5 text-zinc-300">·</span>
+                  <span className="mx-1.5 text-[var(--border)]">·</span>
                   {post.createdAt.toLocaleString("ko-KR")}
                 </p>
               </div>
-              <Badge>{postStatusLabel(post.status)}</Badge>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge>{postStatusLabel(post.status)}</Badge>
+                {post.status === "published" && !post.publishedUrl ? (
+                  <Badge className="border-amber-200 bg-amber-50 text-amber-800">URL 미기록</Badge>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

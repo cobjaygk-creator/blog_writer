@@ -22,8 +22,8 @@ export default async function BrandTemplatesPage({ params }: Props) {
   if (!brand) notFound();
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-10">
-      <Link href={`/brands/${brand.id}`} className="text-sm text-zinc-500 hover:text-zinc-800">
+    <main className="mx-auto w-full max-w-5xl px-6 py-10">
+      <Link href={`/brands/${brand.id}`} className="text-sm text-[color:var(--muted)] hover:text-[var(--accent)]">
         ← {brand.name}
       </Link>
       <div className="mt-6">

@@ -16,6 +16,17 @@ const updateSchema = z.object({
   status: z.enum(["collecting", "draft", "published", "archived"]).optional(),
   headerTemplateId: z.string().min(1).nullable().optional(),
   footerTemplateId: z.string().min(1).nullable().optional(),
+  publishedUrl: z
+    .string()
+    .trim()
+    .max(2000)
+    .optional()
+    .nullable()
+    .refine((v) => v == null || v === "" || /^https?:\/\//i.test(v), {
+      message: "URL 형식",
+    }),
+  publishPlatform: z.enum(["naver", "tistory", "other"]).optional().nullable(),
+  clearPublishArchive: z.boolean().optional(),
 });
 
 type Params = { params: Promise<{ id: string }> };
@@ -25,7 +36,14 @@ export async function GET(_request: Request, { params }: Params) {
   if (error) return error;
 
   const { id } = await params;
-  const post = await getOwnedPost(id, userId!);
+  const post = await prisma.post.findFirst({
+    where: { id, brand: { userId: userId! } },
+    include: {
+      images: { orderBy: { orderIndex: "asc" } },
+      brand: { select: { id: true, name: true } },
+      drafts: { orderBy: { createdAt: "asc" } },
+    },
+  });
   if (!post) return jsonError("포스트를 찾을 수 없습니다.", 404);
 
   return NextResponse.json({ post });
@@ -76,6 +94,14 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!brand) return jsonError("테마를 찾을 수 없습니다.", 404);
   }
 
+  const nextStatus = parsed.data.status;
+  const clearingArchive =
+    parsed.data.clearPublishArchive === true || nextStatus === "draft";
+  const urlValue =
+    parsed.data.publishedUrl === undefined
+      ? undefined
+      : parsed.data.publishedUrl?.trim() || null;
+
   const post = await prisma.post.update({
     where: { id },
     data: {
@@ -97,6 +123,18 @@ export async function PATCH(request: Request, { params }: Params) {
         parsed.data.headerTemplateId === undefined ? undefined : parsed.data.headerTemplateId,
       footerTemplateId:
         parsed.data.footerTemplateId === undefined ? undefined : parsed.data.footerTemplateId,
+      publishedUrl: clearingArchive ? null : urlValue,
+      publishPlatform: clearingArchive
+        ? null
+        : parsed.data.publishPlatform === undefined
+          ? undefined
+          : parsed.data.publishPlatform,
+      publishedAt:
+        nextStatus === "published"
+          ? new Date()
+          : clearingArchive
+            ? null
+            : undefined,
     },
     include: {
       images: { orderBy: { orderIndex: "asc" } },

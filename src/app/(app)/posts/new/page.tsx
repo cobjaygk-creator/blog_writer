@@ -22,12 +22,17 @@ export default async function NewPostPage({ searchParams }: Props) {
 
   return (
     <main className="mx-auto w-full max-w-2xl px-6 py-10">
-      <Link href="/dashboard" className="text-sm text-zinc-500 hover:text-zinc-800">
+      <Link
+        href="/dashboard"
+        className="text-sm text-[color:var(--muted)] hover:text-[var(--accent)]"
+      >
         ← 대시보드
       </Link>
-      <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900">새 글 만들기</h1>
-      <p className="mt-2 text-sm text-zinc-600">
-        글 종류를 고른 뒤 테마·톤을 설정하고 바로 초안을 만들 수 있습니다.
+      <h1 className="mt-3 text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
+        새 글 만들기
+      </h1>
+      <p className="mt-2 text-sm text-[color:var(--muted)]">
+        입력만 마치면 편집기로 넘어가 초안 생성·비교·문체 보정이 이어집니다.
       </p>
       <div className="mt-8">
         <PostWizard

@@ -1,3 +1,4 @@
+import { getUnsplashAccessKey } from "@/lib/integration-config";
 import { fetchWithTimeout } from "@/lib/integrations";
 import { uploadImageBuffer } from "@/lib/storage";
 import { generateAndStoreImage, type GeneratedImage } from "@/lib/image-gen";
@@ -15,8 +16,8 @@ export type StockImageResult = {
   usedFallback: boolean;
 };
 
-export function isUnsplashConfigured() {
-  return Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim());
+export async function isUnsplashConfigured() {
+  return Boolean((await getUnsplashAccessKey()).trim());
 }
 
 export function isUnsplashRateLimitError(error: unknown) {
@@ -36,7 +37,7 @@ export async function fetchUnsplashSceneImage(input: {
   skipUnsplash?: boolean;
 }): Promise<StockImageResult> {
   const query = input.query.trim().slice(0, 120) || "blog illustration";
-  const key = process.env.UNSPLASH_ACCESS_KEY?.trim();
+  const key = (await getUnsplashAccessKey()).trim();
 
   if (input.skipUnsplash) {
     throw new Error("Unsplash 검색 실패 (403): Rate Limit Exceeded");

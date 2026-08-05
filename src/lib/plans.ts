@@ -11,7 +11,7 @@ export type PlanLimits = {
   shortsPerMonth: number;
   imagesPerPost: number;
   generatesPerDay: number;
-  /** Dual GPT+Gemini draft generation (gating reserved; currently always on). */
+  /** Dual GPT+Gemini draft generation — free is single (GPT); lite/pro dual. */
   dualGenerationEnabled: boolean;
 };
 
@@ -24,7 +24,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     shortsPerMonth: 3,
     imagesPerPost: 8,
     generatesPerDay: 10,
-    dualGenerationEnabled: true,
+    dualGenerationEnabled: false,
   },
   lite: {
     brands: 5,
@@ -65,9 +65,9 @@ export const PLAN_NAMES: Record<PlanId, string> = {
 };
 
 export const PLAN_DESCRIPTIONS: Record<PlanId, string> = {
-  free: "Ditodio 통합 체험 — 포스트 + 쇼츠 소량",
-  lite: "Ditodio 통합 — 포스트·쇼츠를 함께 쓰는 개인·소상공인 플랜",
-  pro: "Ditodio 통합 — 대행·헤비용 포스트·쇼츠 한도",
+  free: "검증 초안 + 쇼츠 체험 — 복사·검수 워크플로 (자동발행 아님)",
+  lite: "현장·제품 초안과 쇼츠를 함께 쓰는 개인·소상공인 플랜",
+  pro: "대행·헤비용 포스트·쇼츠 한도 — 문체 학습·듀얼 초안",
 };
 
 /** Default / hard cap for Naver blog bulk import. */

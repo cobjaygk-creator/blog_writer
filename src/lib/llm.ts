@@ -322,40 +322,95 @@ export type DraftGenerateResult = {
   };
 };
 
-const DRAFT_SYSTEM = `당신은 네이버/티스토리 감성의 한국어 블로그 작가 겸 편집자입니다.
+function resolveDraftTypeSizes(fontSizes: string[] | undefined) {
+  const parsed = (fontSizes || [])
+    .map((s) => {
+      const n = Number.parseFloat(String(s).replace(/px/i, ""));
+      return Number.isFinite(n) ? n : NaN;
+    })
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => a - b);
+  if (parsed.length >= 3) {
+    return {
+      body: `${parsed[0]}px`,
+      emphasis: `${parsed[Math.floor(parsed.length / 2)]}px`,
+      heading: `${parsed[parsed.length - 1]}px`,
+    };
+  }
+  if (parsed.length === 2) {
+    return { body: `${parsed[0]}px`, emphasis: `${parsed[1]}px`, heading: `${parsed[1]}px` };
+  }
+  if (parsed.length === 1) {
+    return {
+      body: TYPE_SIZE_BODY,
+      emphasis: `${parsed[0]}px`,
+      heading: TYPE_SIZE_HEADING,
+    };
+  }
+  return { body: TYPE_SIZE_BODY, emphasis: TYPE_SIZE_EMPHASIS, heading: TYPE_SIZE_HEADING };
+}
+
+function emojiDensityGuidance(emojiUsage: string) {
+  if (/거의\s*없음|없음|none/i.test(emojiUsage)) {
+    return `3) 이모지: 학습 프로필이 "${emojiUsage}"이므로 이모지를 거의 쓰지 마세요. 제목·마무리에 많아도 1개. 강제 삽입 금지.`;
+  }
+  if (/적음|적게|낮/i.test(emojiUsage)) {
+    return `3) 이모지: 학습 프로필이 "${emojiUsage}" — 도입/마무리·핵심 소제목에만 드물게 사용. frequentEmojis 우선. 2~3문단마다 강제하지 말 것.`;
+  }
+  if (/많음|자주|frequent/i.test(emojiUsage)) {
+    return `3) 이모지 적극 사용:
+   - frequentEmojis를 우선. 없으면 시공/자동차 맥락 이모지(🔧✨👍🚗📦✅🙏)
+   - 제목·h2/h3·도입·마무리 CTA·사진 직후 문장에 이모지
+   - 2~3문단마다 최소 1개`;
+  }
+  return `3) 이모지 적절히 사용(학습: ${emojiUsage}):
+   - frequentEmojis 우선. 없으면 🔧✨👍🚗📦✅🙏
+   - 소제목·포인트에 자연스럽게. 밋밋한 plain만 이어지지 않게`;
+}
+
+function buildDraftSystem(opts: {
+  hasImages: boolean;
+  emojiUsage: string;
+  bodySize: string;
+  emphasisSize: string;
+  headingSize: string;
+}) {
+  const imageRules = opts.hasImages
+    ? `6) 사진은 반드시 제공 URL 그대로 사용(변경·생략 금지). 배치 규칙은 아래 "사진 배치"를 절대적으로 따릅니다.
+   - [단독] 슬롯: 세로로 하나씩 <p><img src="URL" alt="장면키워드" style="${SINGLE_IMAGE_STYLE}" /></p>
+   - [묶음] 슬롯만 image-group 사용
+   - 사용자가 묶지 않은 사진을 임의로 묶지 마세요.
+7) 장면 키워드 → 문장체 확장(최우선):
+   - 키워드를 복붙하지 말고 말투로 풀어 쓰세요. 없는 스펙은 제품 팩트/웹 리서치로만 보강.
+   - 단락마다: (짧은 도입+이모지) → 이미지 → (키워드+팩트 1문장). 빈 <p> 금지.
+8) 시공/제품 흐름: 짧은 도입 → 포인트 → 사진별 설명 → CTA. 라이프스타일 감성 소개문 금지`
+    : `6) 사진이 없습니다. img 태그를 넣지 마세요. 임의 이미지 URL 금지.
+7) 텍스트 전용 구성(필수):
+   - 도입(2~3문단) → h2 섹션 3~5개(특장점·과정·주의·팁) → 마무리 CTA
+   - 각 섹션은 제품 팩트·웹 리서치·유사 사례 용어를 근거로 구체적 문장으로 쓰세요
+   - "사진이 없어 설명이 부족하다"는 식의 메타 멘트 금지
+8) 시공/제품 흐름: 짧은 도입 → 핵심 포인트(텍스트) → 주의/팁 → CTA. 라이프스타일 감성 소개문 금지`;
+
+  return `당신은 네이버/티스토리 감성의 한국어 블로그 작가 겸 편집자입니다.
 반드시 JSON만 반환하세요. 키: title(string), titleCandidates(string[] 3개), body(string, HTML).
 
 body 작성 규칙:
-1) HTML만 사용 (마크다운 금지). 허용 태그: p, br, h2, h3, strong, em, ul, li, span, img, div
+1) HTML만 사용 (마크다운 금지). 허용 태그: p, br, h2, h3, strong, em, ul, li, span${opts.hasImages ? ", img, div" : ""}
 2) 학습된 줄바꿈 리듬을 따르세요. 긴 문단 금지. 한 문단은 1~2문장, 호흡마다 새 <p>
-3) 이모지 적극 사용(필수):
-   - frequentEmojis를 우선 사용. 없으면 시공/자동차 맥락 이모지(🔧✨👍🚗📦✅🙏) 사용
-   - 제목·모든 h2/h3·도입·마무리 CTA·사진 직후 문장에 이모지를 넣으세요
-   - 밋밋한 순수 텍스트 단락만 이어지지 않게, 2~3문단마다 최소 1개 이모지
-4) 강조·색 적극 사용(필수):
-   - 제품명·스펙·핵심 동사마다 <strong> 또는 <span style="color:#HEX"> (colorPalette 순환)
-   - 단락마다 최소 1회 색상/강조. 회색 밋밋한 본문만 쓰지 말 것
-5) 글자 크기 적극 사용(필수) — typography-rhythm 고정: 본문 ${TYPE_SIZE_BODY} / 강조 ${TYPE_SIZE_EMPHASIS} / 제목 ${TYPE_SIZE_HEADING}.
+${emojiDensityGuidance(opts.emojiUsage)}
+4) 강조·색 사용:
+   - 제품명·스펙·핵심 동사에 <strong> 또는 <span style="color:#HEX"> (colorPalette 순환)
+   - 밋밋한 회색 본문만 쓰지 말 것. 학습 emphasisStyle을 우선
+5) 글자 크기 — 학습 프로필 우선: 본문 ${opts.bodySize} / 강조 ${opts.emphasisSize} / 제목 ${opts.headingSize}.
    반드시 <span style="font-size:..."> 안에 넣으세요 (h2/h3 태그 style은 에디터가 버림):
-   - 소제목: <h2><span style="font-size:${TYPE_SIZE_HEADING};color:#HEX">제목 ✨</span></h2>
-   - 소소제목: <h3><span style="font-size:${TYPE_SIZE_EMPHASIS};color:#HEX">소제목</span></h3>
-   - 포인트 문장: <p><span style="font-size:${TYPE_SIZE_EMPHASIS}">...</span></p>
-   - 보조 설명: <p><span style="font-size:${TYPE_SIZE_BODY}">...</span></p>
-   - 크기·색이 없는 plain <p>만 연속되면 실패로 간주하고 서식을 넣으세요
-6) 사진은 반드시 제공 URL 그대로 사용(변경·생략 금지). 배치 규칙은 아래 "사진 배치"를 절대적으로 따릅니다.
-   - [단독] 슬롯: 반드시 세로로 하나씩 <p><img src="URL" alt="장면키워드" style="${SINGLE_IMAGE_STYLE}" /></p> (나란히/그리드 금지)
-   - [묶음] 슬롯만 image-group 사용:
-     <div data-type="image-group" data-cols="2" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0;">...</div>
-   - 사용자가 묶지 않은 사진을 임의로 묶지 마세요.
-7) 장면 키워드 → 문장체 확장(최우선):
-   - 각 단락의 "장면 키워드"는 사용자가 확정한 사실 메모입니다. 키워드를 그대로 복붙하지 말고 지정된 말투로 풀어 쓰세요.
-   - 키워드에 없는 색·재질·스펙·상태를 지어내지 마세요.
-   - 부족한 스펙·특장점은 제품 팩트(검색/수동)로만 보강하고, 팩트에도 없으면 쓰지 마세요.
-   - 단락마다: (짧은 도입 문장+이모지) → 이미지 → (키워드+관련 팩트를 말투로 풀어쓴 1문장, 강조/색 포함). 빈 <p></p> / <p><br></p> 금지.
-8) 시공 작업기 흐름: 짧은 도입 → 제품/작업 포인트 → 사진별 설명 → CTA. 라이프스타일 감성 소개문 금지
+   - 소제목: <h2><span style="font-size:${opts.headingSize};color:#HEX">제목</span></h2>
+   - 포인트: <p><span style="font-size:${opts.emphasisSize}">...</span></p>
+   - 본문: <p><span style="font-size:${opts.bodySize}">...</span></p>
+${imageRules}
 9) 같은 문장 패턴 반복 금지. "세련된 변신/매력적으로 변신/유익한 정보로 돌아오겠습니다" 류 금지
-10) 설명조 보고서 문체 금지. 원문·유사 사례의 용어·호흡·시공 표현을 적극 반영
+10) 설명조 보고서 문체 금지. 원문·유사 사례·웹 리서치의 용어·호흡을 테마 말투로 재작성
 11) HTML 전체를 코드블록으로 감싸지 말 것`;
+}
 
 export type DraftImageSlot = {
   type: "single" | "group";
@@ -382,6 +437,10 @@ export async function generateBlogDraft(input: {
   length?: TopicLength | string | null;
   /** Dual-draft: which provider runs this call (gpt | gemini) */
   draftProvider?: DraftProvider;
+  /** worklog | product — shapes structure & fact emphasis */
+  postMode?: "worklog" | "product" | null;
+  /** Formatted web research (blogs/news snippets) */
+  webResearch?: string | null;
 }): Promise<DraftGenerateResult> {
   const draftProvider = input.draftProvider || "gpt";
   const traits = normalizeExtendedTraits(input.traitsJson);
@@ -398,20 +457,53 @@ export async function generateBlogDraft(input: {
           `--- 유사 사례 ${i + 1}${s.title ? ` · ${s.title}` : ""} ---\n${s.excerpt}`,
       )
       .join("\n\n") || "";
+  const hasImages = (input.images?.length || 0) > 0;
   const imageLines = formatImageSlotLines(input.imageSlots, input.images);
   const sceneKeywords = formatSceneKeywords(input.imageSlots, input.images);
   const hasSceneKeywords = sceneKeywords !== "(장면 키워드 없음)";
+  const typeSizes = resolveDraftTypeSizes(draftTraits.fontSizes);
   const productBlock = input.productFacts?.highlights?.length
     ? `제품: ${input.productFacts.productName}\n특장점:\n${input.productFacts.highlights
         .map((h) => `- ${h}`)
         .join("\n")}\n주의: ${input.productFacts.caution || "키워드·사진과 관련될 때만. 불확실 스펙 금지"}`
     : "(없음 — 키워드에 없는 스펙은 추측하지 말 것)";
+  const isProductMode = input.postMode === "product";
+  const modeBlock = isProductMode
+    ? `글 모드: 제품·리뷰 (필수)
+- 흐름: 제품 소개 → 핵심 스펙/특장점(제품 팩트·웹 리서치 반영) → 장단점 → 구매·사용 팁 → CTA
+- 제품 팩트·특장점을 본문에 명시적으로 녹이세요. 팩트가 비어 있으면 웹 리서치·키워드만으로 짧게, 추측 스펙 금지.
+- 시공 공정 나열보다 제품 가치·스펙·사용감에 비중을 두세요.`
+    : hasImages
+      ? `글 모드: 시공·후기
+- 흐름: 짧은 도입 → 제품/작업 포인트 → 사진·공정 키워드 중심 설명 → CTA
+- 사진 장면 키워드와 시공 용어를 우선하세요.`
+      : `글 모드: 시공·후기 (사진 없음 — 텍스트 보강)
+- 흐름: 짧은 도입 → 작업/제품 포인트 → 주의·팁 → CTA
+- 웹 리서치·유사 사례·제품 팩트로 정보량을 채우되, 없는 차종·가격·스펙은 쓰지 마세요.`;
+  const styleHardConstraints = `학습 스타일 강제(JSON보다 우선):
+- 문장 길이: ${draftTraits.sentenceLength}
+- 줄바꿈: ${draftTraits.lineBreakStyle}
+- 강조: ${draftTraits.emphasisStyle}
+- 구조 메모: ${draftTraits.structureNotes || "(없음)"}
+- 골격: ${(draftTraits.sectionPatterns || []).join(" → ") || "(없음)"}
+- 자주 쓰는 표현(가능하면 2개 이상 자연스럽게): ${(draftTraits.commonPhrases || []).slice(0, 6).join(" / ") || "(없음)"}
+- 이모지 밀도: ${draftTraits.emojiUsage}`;
   const accent =
     draftTraits.colorPalette.find((c) => c.toUpperCase() !== "#222222") || "#E85D04";
   const emojiPool =
     draftTraits.frequentEmojis.length > 0
       ? draftTraits.frequentEmojis.join(" ")
       : "🔧 ✨ 👍 🚗 📦 ✅ 🙏";
+  const webResearchBlock = input.webResearch?.trim()
+    ? input.webResearch.trim()
+    : "(웹 리서치 없음)";
+  const draftSystem = buildDraftSystem({
+    hasImages,
+    emojiUsage: draftTraits.emojiUsage,
+    bodySize: typeSizes.body,
+    emphasisSize: typeSizes.emphasis,
+    headingSize: typeSizes.heading,
+  });
 
   let tokenUsage: DraftTokenUsage | undefined;
   let modelId = getDraftProviderConfig(draftProvider).model;
@@ -420,15 +512,19 @@ export async function generateBlogDraft(input: {
     async () => {
       const chat = await chatCompletion(
         [
-          { role: "system", content: DRAFT_SYSTEM },
+          { role: "system", content: draftSystem },
           {
             role: "user",
             content: `테마: ${input.brandName}
 키워드: ${input.keyword}
 
+${modeBlock}
+
 이번 글 말투(최우선, 문장체 옵션): ${voiceTone}
 오프닝 스타일: ${draftTraits.openerStyle}
 클로징 스타일: ${draftTraits.closerStyle}
+
+${styleHardConstraints}
 
 문체·편집 요약:
 ${input.styleSummary}
@@ -438,12 +534,11 @@ ${JSON.stringify(draftTraits, null, 2)}
 
 사용할 이모지 풀: ${emojiPool}
 강조색 예시: ${accent} (colorPalette: ${draftTraits.colorPalette.join(", ") || accent})
-글자 크기 풀: ${(draftTraits.fontSizes || []).join(", ") || "15px, 18px, 22px"}
+글자 크기(학습 우선): 본문 ${typeSizes.body} / 강조 ${typeSizes.emphasis} / 제목 ${typeSizes.heading}
 
 학습 용어(domainTerms): ${(draftTraits.domainTerms || []).join(", ") || "(없음)"}
 학습 제품명(productMentions, 관련될 때만 자연스럽게): ${(draftTraits.productMentions || []).join(", ") || "(없음)"}
 학습 CTA: ${(draftTraits.ctaPhrases || []).join(", ") || "(없음)"}
-글 골격: ${(draftTraits.sectionPatterns || []).join(" → ") || "(없음)"}
 금지 표현: ${(draftTraits.bannedFluff || []).join(" / ") || "(없음)"}
 
 원문 샘플(리듬·이모지·말투 참고, 내용 복붙 금지):
@@ -452,8 +547,11 @@ ${anchors || "(없음)"}
 유사 사례(시공 용어·섹션 흐름·호응을 강하게 참고. 문장 복붙 금지. 사례의 차종·색·가격·사진 사실은 새 글에 옮기지 말 것):
 ${similar || "(없음)"}
 
-제품 팩트(검색/수동 — 단락 키워드에 없는 스펙 보강용. 관련될 때만):
+제품 팩트(${isProductMode ? "제품 모드 — 본문에 특장점을 적극 반영. 관련 사실만" : "검색/수동 — 스펙 보강용. 관련될 때만"}):
 ${productBlock}
+
+웹 리서치(블로그·뉴스 스니펫 증류 — 스니펫에 없는 사실 금지. 문장 복붙 금지, 테마 말투로 재작성):
+${webResearchBlock}
 
 단락별 장면 키워드(사용자 입력 우선. 사실 근거. 이와 모순되면 안 됨. 복붙 금지 → 말투로 확장):
 ${sceneKeywords}
@@ -463,20 +561,23 @@ ${imageLines}
 
 요청:
 - 목표 분량: ${lengthPreset.label} — 본문 순수 텍스트 약 ${lengthPreset.targetChars.min}~${lengthPreset.targetChars.max}자 (${lengthPreset.hint}). ${lengthPreset.paragraphsPerSection}.
-- 사실 우선순위: 1) 단락 장면 키워드 2) 제품 팩트 3) 유사 사례 용어·흐름 4) 편집 프로필
-- 모든 문장은 "${voiceTone}" 말투로 쓰세요. opener/closer 스타일을 반영하세요.
-- 장면 키워드를 복붙하지 말고 말투로 풀어 쓰세요. 없는 스펙은 제품 팩트로만 보강.
-- 이모지·색상·글자 크기·strong을 적극 사용하세요. 밋밋한 plain 텍스트만 나오면 안 됩니다.
-- 학습 용어·productMentions·CTA를 자연스럽게 넣고, bannedFluff 표현은 쓰지 마세요.
-- 단락마다: (짧은 시공/제품 문장+이모지+강조) → 이미지 → (키워드+팩트 풀어쓴 1문장, 색/크기 포함).
-- [단독]은 세로 1장씩, [묶음]만 가로 그리드.
-- 제목에도 이모지를 넣으세요.
+- 사실 우선순위: ${
+              !hasImages
+                ? "1) 제품 팩트 2) 웹 리서치 3) 유사 사례 용어·흐름 4) 편집 프로필"
+                : isProductMode
+                  ? "1) 제품 팩트·특장점 2) 단락 장면 키워드 3) 웹 리서치/유사 사례 4) 편집 프로필"
+                  : "1) 단락 장면 키워드 2) 제품 팩트 3) 웹 리서치/유사 사례 4) 편집 프로필"
+            }
+- 모든 문장은 "${voiceTone}" 말투로 쓰세요. opener/closer·학습 스타일 강제 항목을 지키세요.
+- 장면 키워드·리서치를 복붙하지 말고 말투로 풀어 쓰세요. 없는 스펙은 팩트/리서치로만 보강.
+- 학습 용어·productMentions·CTA·commonPhrases를 자연스럽게 넣고, bannedFluff는 쓰지 마세요.
+${hasImages ? `- 단락마다: (짧은 ${isProductMode ? "제품" : "시공/제품"} 문장) → 이미지 → (키워드+팩트 1문장).\n- [단독]은 세로 1장씩, [묶음]만 가로 그리드.` : "- 사진 없이 섹션형 본문으로 정보량을 채우세요."}
 - 목표 분량을 맞추세요. 짧게는 핵심만, 길게는 과정·포인트·마무리를 더 자세히.`,
           },
         ],
         {
           json: true,
-          temperature: hasSceneKeywords ? 0.5 : 0.65,
+          temperature: hasSceneKeywords || Boolean(input.webResearch?.trim()) ? 0.5 : 0.65,
           maxTokens: Math.max(llmMaxTokens(), lengthPreset.draftMaxTokens),
           draftProvider,
         },

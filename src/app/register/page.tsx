@@ -47,9 +47,19 @@ export default function RegisterPage() {
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">회원가입</h1>
-      <p className="mt-2 text-sm text-zinc-600">테마별 문체 학습 후 블로그 초안을 만듭니다.</p>
-      <form onSubmit={onSubmit} className="mt-8 space-y-4">
+      <Link href="/" className="text-sm font-bold text-[var(--accent)]">
+        Ditodio
+      </Link>
+      <h1 className="mt-3 text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
+        회원가입
+      </h1>
+      <p className="mt-2 text-sm text-[color:var(--muted)]">
+        테마별 문체 학습 후 블로그 초안을 만듭니다.
+      </p>
+      <form
+        onSubmit={onSubmit}
+        className="mt-8 space-y-4 rounded-xl border border-[var(--border)] bg-white p-6"
+      >
         <Label>
           <span>이메일</span>
           <Input
@@ -74,9 +84,9 @@ export default function RegisterPage() {
           {busy ? "가입 중…" : "가입하기"}
         </Button>
       </form>
-      <p className="mt-6 text-sm text-zinc-600">
+      <p className="mt-6 text-sm text-[color:var(--muted)]">
         이미 계정이 있나요?{" "}
-        <Link href="/login" className="font-medium text-zinc-900 underline">
+        <Link href="/login" className="font-semibold text-[var(--accent)] hover:underline">
           로그인
         </Link>
       </p>

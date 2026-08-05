@@ -123,7 +123,46 @@ type ImageCandidate = {
   pageUrl: string;
   title: string;
   imageUrl?: string;
+  snippet?: string;
 };
+
+/** Tokenize topic for loose relevance checks (KO/EN). */
+export function topicRelevanceTokens(topic: string): string[] {
+  const raw = topic
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const t of raw) {
+    if (t.length >= 2) out.push(t);
+    // Keep longer Korean compounds as whole tokens too
+    if (t.length >= 4) out.push(t.slice(0, Math.min(6, t.length)));
+  }
+  return [...new Set(out)].slice(0, 24);
+}
+
+/** True when title/snippet/url share enough topic tokens. */
+export function isTopicRelevantText(
+  topic: string,
+  parts: Array<string | null | undefined>,
+): boolean {
+  const tokens = topicRelevanceTokens(topic);
+  if (!tokens.length) return true;
+  const hay = parts
+    .filter((p): p is string => Boolean(p?.trim()))
+    .join(" ")
+    .toLowerCase();
+  if (!hay.trim()) return false;
+  let hits = 0;
+  for (const t of tokens) {
+    if (hay.includes(t)) hits += 1;
+  }
+  // Need at least 1 strong match; for longer topics require 2
+  const need = tokens.length >= 4 ? 2 : 1;
+  return hits >= need;
+}
 
 function buildImageCandidates(
   sources: TopicResearchSource[],
@@ -132,48 +171,41 @@ function buildImageCandidates(
 ): ImageCandidate[] {
   const byKey = new Map<string, ImageCandidate>();
 
+  // Only news URLs that look on-topic. Never attach an orphan imageUrl to a random news page.
   for (const h of hits) {
-    if (!isNewsUrl(h.url) && !h.imageUrl) continue;
-    const pageUrl = isNewsUrl(h.url) ? h.url : h.url;
-    const key = h.imageUrl || pageUrl;
-    if (!byKey.has(key)) {
-      byKey.set(key, {
-        pageUrl,
-        title: h.title || topic || "뉴스",
-        imageUrl: h.imageUrl,
-      });
-    } else if (h.imageUrl && !byKey.get(key)?.imageUrl) {
-      byKey.get(key)!.imageUrl = h.imageUrl;
-    }
-  }
-
-  // Tavily may attach the same gallery image to many hits — also add each unique imageUrl
-  // as its own candidate keyed by image URL.
-  for (const h of hits) {
-    if (!h.imageUrl) continue;
-    const key = `img:${h.imageUrl}`;
-    if (byKey.has(key)) continue;
-    const pageUrl = hits.find((x) => isNewsUrl(x.url))?.url || h.url;
+    if (!isNewsUrl(h.url)) continue;
+    if (!isTopicRelevantText(topic, [h.title, h.content, h.url])) continue;
+    const key = h.url;
+    const prev = byKey.get(key);
     byKey.set(key, {
-      pageUrl,
-      title: h.title || topic || "뉴스",
-      imageUrl: h.imageUrl,
+      pageUrl: h.url,
+      title: h.title || prev?.title || topic || "뉴스",
+      imageUrl: h.imageUrl || prev?.imageUrl,
+      snippet: h.content || prev?.snippet,
     });
   }
 
   for (const s of sources) {
     if (!s.url || !isNewsUrl(s.url)) continue;
+    if (!isTopicRelevantText(topic, [s.title, s.note, s.url])) continue;
     const key = s.url;
     const prev = byKey.get(key);
     byKey.set(key, {
       pageUrl: s.url,
       title: s.title || prev?.title || topic || "뉴스",
       imageUrl: prev?.imageUrl,
+      snippet: s.note || prev?.snippet,
     });
   }
 
-  // Prefer candidates that already have an imageUrl
-  return [...byKey.values()].sort((a, b) => Number(Boolean(b.imageUrl)) - Number(Boolean(a.imageUrl)));
+  // Prefer candidates that already have an imageUrl, then higher title relevance
+  return [...byKey.values()].sort((a, b) => {
+    const img = Number(Boolean(b.imageUrl)) - Number(Boolean(a.imageUrl));
+    if (img !== 0) return img;
+    const aRel = isTopicRelevantText(topic, [a.title, a.snippet]) ? 1 : 0;
+    const bRel = isTopicRelevantText(topic, [b.title, b.snippet]) ? 1 : 0;
+    return bRel - aRel;
+  });
 }
 
 async function extractImagesFromPage(pageUrl: string): Promise<string[]> {

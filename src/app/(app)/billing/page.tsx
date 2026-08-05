@@ -57,18 +57,21 @@ export default function BillingPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-semibold text-zinc-900">Ditodio 요금 · 구독</h1>
-      <p className="mt-2 text-sm text-zinc-600">
-        포스트와 쇼츠를 한 요금제로 이용합니다. 현재 플랜: <strong>{planCode}</strong>
+    <main className="mx-auto w-full max-w-5xl px-6 py-10">
+      <h1 className="text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
+        Ditodio 요금 · 구독
+      </h1>
+      <p className="mt-2 text-sm text-[color:var(--muted)]">
+        포스트와 쇼츠를 한 요금제로 이용합니다. 현재 플랜:{" "}
+        <strong className="text-[var(--accent)]">{planCode}</strong>
         {subscription ? (
-          <span className="ml-2 text-zinc-500">
+          <span className="ml-2">
             · 구독 {String((subscription as { status?: string }).status)}
           </span>
         ) : null}
       </p>
       {limits ? (
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="mt-1 text-xs text-[color:var(--muted)]">
           한도 — 포스트/월 {limits.postsPerMonth} · 쇼츠/월 {limits.shortsPerMonth} · 테마{" "}
           {limits.brands}
         </p>
@@ -82,8 +85,8 @@ export default function BillingPage() {
             <CardHeader>
               <CardTitle>{p.name}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm text-zinc-600">
-              <p className="text-lg font-semibold text-zinc-900">
+            <CardContent className="space-y-2 text-sm text-[color:var(--muted)]">
+              <p className="text-lg font-semibold text-[color:var(--foreground)]">
                 {p.priceMonthlyKrw === 0
                   ? "무료"
                   : `월 ${p.priceMonthlyKrw.toLocaleString()}원`}
@@ -91,9 +94,9 @@ export default function BillingPage() {
               <p>포스트 {p.postsPerMonth}/월</p>
               <p>쇼츠 {p.shortsPerMonth}/월</p>
               <p>테마 {p.brandsLimit}</p>
-              {p.description ? <p className="text-xs text-zinc-500">{p.description}</p> : null}
+              {p.description ? <p className="text-xs text-[color:var(--muted)]">{p.description}</p> : null}
               {p.isPurchasable ? (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-[color:var(--muted)]">
                   카드 등록 결제는 Toss 빌링 위젯 연동 후 checkout API로 완료합니다.
                 </p>
               ) : null}

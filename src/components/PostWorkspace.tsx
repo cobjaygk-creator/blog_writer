@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ImageGalleryBoard } from "@/components/ImageGalleryBoard";
@@ -20,8 +20,16 @@ import {
   captionToneOptions,
 } from "@/lib/caption-tones";
 import { attachToSlotLayout, imagesToSlots } from "@/lib/image-slots";
+import { GenerationProgressModal } from "@/components/GenerationProgressModal";
 import { NewCutLink } from "@/components/NewCutLink";
-import { postStatusLabel } from "@/lib/post-status";
+import { phaseProgressRange } from "@/lib/generation-progress";
+import { phaseStatusLabel } from "@/lib/post-generate-job-ui";
+import { postStatusHint, postStatusLabel } from "@/lib/post-status";
+import {
+  resumeActiveGenerationJob,
+  runGenerationJobClient,
+  type ClientJob,
+} from "@/lib/run-generation-job-client";
 import { applyTemplateToBody, type TemplateKind } from "@/lib/templates";
 import {
   TOPIC_LENGTHS,
@@ -55,6 +63,19 @@ type CandidateDraft = {
   label?: string;
 };
 
+type StyleMetaEntry = {
+  score?: number;
+  repaired?: boolean;
+  issues?: string[];
+};
+
+type SeoMetaEntry = {
+  score?: number;
+  repaired?: boolean;
+  issues?: string[];
+  heuristic?: boolean;
+};
+
 type PostData = {
   id: string;
   brandId: string;
@@ -66,6 +87,9 @@ type PostData = {
   productHighlights?: string | null;
   captionTone?: string | null;
   status: string;
+  publishedUrl?: string | null;
+  publishedAt?: string | null;
+  publishPlatform?: string | null;
   headerTemplateId?: string | null;
   footerTemplateId?: string | null;
   images: PostImage[];
@@ -87,6 +111,7 @@ export function PostWorkspace({
   brandTone?: string | null;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [post, setPost] = useState(initialPost);
   const [keyword, setKeyword] = useState(initialPost.keyword || "");
   const [captionTone, setCaptionTone] = useState(
@@ -96,6 +121,15 @@ export function PostWorkspace({
     initialPost.productHighlights || "",
   );
   const [draftLength, setDraftLength] = useState<TopicLength>("medium");
+  const [topicImageCount, setTopicImageCount] = useState(3);
+  const [topicUseAiImages, setTopicUseAiImages] = useState(false);
+  const [topicReplaceImages, setTopicReplaceImages] = useState(false);
+  const [styleMeta, setStyleMeta] = useState<Record<string, StyleMetaEntry> | null>(null);
+  const [seoMeta, setSeoMeta] = useState<Record<string, SeoMetaEntry> | null>(null);
+  const [failedProviders, setFailedProviders] = useState<string[]>([]);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [publishUrlInput, setPublishUrlInput] = useState("");
+  const [publishPlatform, setPublishPlatform] = useState<"naver" | "tistory" | "other">("naver");
   const [title, setTitle] = useState(initialPost.title || "");
   const [body, setBody] = useState(() =>
     toEditorHtml(
@@ -108,6 +142,7 @@ export function PostWorkspace({
   const [footerTemplateId, setFooterTemplateId] = useState(initialPost.footerTemplateId || "");
   const [error, setError] = useState<string | null>(null);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
+  const [showCopyGuide, setShowCopyGuide] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [editorTab, setEditorTab] = useState<"edit" | "preview">("edit");
   const [editorRevision, setEditorRevision] = useState(0);
@@ -128,12 +163,29 @@ export function PostWorkspace({
   );
   const [selectingDraftId, setSelectingDraftId] = useState<string | null>(null);
   const [dualFailNotice, setDualFailNotice] = useState<string | null>(null);
+  const [generatePhaseLabel, setGeneratePhaseLabel] = useState<string | null>(null);
+  const [generatePhase, setGeneratePhase] = useState<string>("pending");
+  const [generateKind, setGenerateKind] = useState<"generate" | "generate_topic">("generate");
+  const [generateComplete, setGenerateComplete] = useState(false);
+
+  function noteGeneratePhase(job: Pick<ClientJob, "phase" | "kind">) {
+    setGenerateKind(job.kind);
+    setGeneratePhase(job.phase);
+    setGeneratePhaseLabel(phaseStatusLabel(job.phase, job.kind));
+  }
+
+  function clearGenerateUi() {
+    setGeneratePhaseLabel(null);
+    setGeneratePhase("pending");
+    setGenerateComplete(false);
+  }
   const [snapshotBeforeCompare, setSnapshotBeforeCompare] = useState<{
     title: string;
     body: string;
   } | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const prevBusyRef = useRef(busy);
+  const resumeTriedRef = useRef(false);
 
   useEffect(() => {
     const wasGenerating = prevBusyRef.current === "generate";
@@ -146,6 +198,65 @@ export function PostWorkspace({
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [busy, needsSelection]);
+
+  useEffect(() => {
+    if (resumeTriedRef.current) return;
+    resumeTriedRef.current = true;
+    const wantGenerate = searchParams.get("generating") === "1";
+    let cancelled = false;
+    void (async () => {
+      try {
+        const peek = await fetch(`/api/posts/${initialPost.id}/generate-jobs/active`);
+        const peekData = (await peek.json().catch(() => ({}))) as {
+          job?: { id: string } | null;
+        };
+        if (cancelled) return;
+        if (!peekData.job) {
+          if (wantGenerate) {
+            router.replace(`/posts/${initialPost.id}`);
+          }
+          return;
+        }
+
+        setBusy("generate");
+        setGenerateComplete(false);
+        setGeneratePhase("pending");
+        setGenerateKind(
+          initialPost.mode === "topic" ? "generate_topic" : "generate",
+        );
+        setGeneratePhaseLabel(
+          wantGenerate ? "초안 생성 시작…" : "이전 생성 이어서 진행 중…",
+        );
+        const job = await resumeActiveGenerationJob(initialPost.id, {
+          onPhase: (j) => {
+            if (cancelled) return;
+            noteGeneratePhase(j);
+          },
+        });
+        if (cancelled || !job) {
+          if (!cancelled) {
+            setBusy(null);
+            clearGenerateUi();
+          }
+          return;
+        }
+        await applyCompletedGenerateJob(job);
+        router.replace(`/posts/${initialPost.id}`);
+      } catch (e) {
+        if (!cancelled) {
+          setBusy(null);
+          clearGenerateUi();
+          setError(e instanceof Error ? e.message : "초안 생성 실패");
+          router.replace(`/posts/${initialPost.id}`);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Resume only on mount for this post
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPost.id]);
 
   const headerTemplates = useMemo(
     () => templates.filter((t) => t.kind === "header"),
@@ -172,6 +283,16 @@ export function PostWorkspace({
   const toneOptions = useMemo(() => captionToneOptions(brandTone), [brandTone]);
 
   const statusLabel = postStatusLabel(post.status);
+  const statusHint = postStatusHint(post.status);
+  const hasBodyText = Boolean(body.replace(/<[^>]+>/g, "").trim());
+  const isCollecting = post.status === "collecting";
+  /** Allow edit/save when a draft body exists even if status flipped to collecting. */
+  const bodyLocked = isCollecting && !hasBodyText && !needsSelection;
+  const emptyCaptionCount = post.images.filter((img) => !img.caption?.trim()).length;
+  const showNewCutCta =
+    (post.status === "draft" || (isCollecting && hasBodyText)) &&
+    hasBodyText &&
+    !needsSelection;
 
   function applyBodyHtml(html: string) {
     const next = ensureImagesInHtml(html, imageInputs(post.images), {
@@ -214,11 +335,18 @@ export function PostWorkspace({
         if (!res.ok || !data.image) {
           throw new Error(data.error || "업로드 실패");
         }
-        setPost((prev) => ({
-          ...prev,
-          status: "collecting",
-          images: [...prev.images, data.image!].sort((a, b) => a.orderIndex - b.orderIndex),
-        }));
+        setPost((prev) => {
+          const keepDraft = Boolean(prev.body?.replace(/<[^>]+>/g, "").trim()) || hasBodyText;
+          return {
+            ...prev,
+            status: keepDraft
+              ? prev.status === "collecting"
+                ? "draft"
+                : prev.status
+              : "collecting",
+            images: [...prev.images, data.image!].sort((a, b) => a.orderIndex - b.orderIndex),
+          };
+        });
       }
       router.refresh();
     } catch (e) {
@@ -272,14 +400,21 @@ export function PostWorkspace({
       if (!layoutRes.ok || !layoutData.images) {
         throw new Error(layoutData.error || "묶음 저장 실패");
       }
-      setPost((prev) => ({ ...prev, status: "collecting", images: layoutData.images! }));
+      setPost((prev) => ({
+        ...prev,
+        status: hasBodyText
+          ? prev.status === "collecting"
+            ? "draft"
+            : prev.status
+          : prev.status,
+        images: layoutData.images!,
+      }));
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "이미지 추가 실패");
       if (uploaded.length) {
         setPost((prev) => ({
           ...prev,
-          status: "collecting",
           images: [...prev.images, ...uploaded]
             .filter((img, i, arr) => arr.findIndex((x) => x.id === img.id) === i)
             .sort((a, b) => a.orderIndex - b.orderIndex),
@@ -355,45 +490,46 @@ export function PostWorkspace({
     });
   }
 
-  async function generateDraft() {
-    if (needsSelection || body.trim()) {
-      const ok = window.confirm(
-        "새 초안을 만들면 지금 비교·편집 중인 내용이 바뀔 수 있어요. 계속할까요?",
-      );
-      if (!ok) return;
-    }
-
-    setSnapshotBeforeCompare({ title, body });
-    setBusy("generate");
-    setError(null);
-    setCopyMsg(null);
-    setDualFailNotice(null);
-    setNeedsSelection(false);
-    setCandidateDrafts([]);
-    const res = await fetch(`/api/posts/${post.id}/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        keyword: keyword || undefined,
-        productHighlights: productHighlights.trim() || null,
-        captionTone: captionTone || BRAND_CAPTION_TONE,
-        length: draftLength,
-      }),
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      error?: string;
-      post?: PostData;
+  async function applyCompletedGenerateJob(job: {
+    result: {
       needsSelection?: boolean;
       drafts?: CandidateDraft[];
       meta?: {
         failed?: Array<{ provider: string; error: string } | string>;
+        style?: Record<string, StyleMetaEntry> | null;
+        seo?: Record<string, SeoMetaEntry> | null;
       };
+    } | null;
+  }) {
+    const res = await fetch(`/api/posts/${post.id}`);
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      post?: PostData;
     };
+    setGeneratePhase("completed");
+    setGenerateComplete(true);
+    await new Promise((r) => setTimeout(r, 450));
     setBusy(null);
+    clearGenerateUi();
     if (!res.ok || !data.post) {
-      setError(data.error || "초안 생성 실패");
+      // Fallback to job result drafts only
+      const failed = job.result?.meta?.failed || [];
+      if (failed.length) {
+        const detail = failed
+          .map((f) => (typeof f === "string" ? f : `${f.provider}: ${f.error}`))
+          .join(" · ");
+        setDualFailNotice(`일부 버전 생성에 실패해 하나만 준비됐어요. (${detail})`);
+      }
+      if (job.result?.needsSelection && job.result.drafts && job.result.drafts.length >= 2) {
+        setNeedsSelection(true);
+        setCandidateDrafts(job.result.drafts);
+        setTitle("");
+        setBody("");
+      }
+      router.refresh();
       return;
     }
+
     setPost(data.post);
     setKeyword(data.post.keyword || "");
     if (data.post.captionTone !== undefined) {
@@ -403,7 +539,23 @@ export function PostWorkspace({
       setProductHighlights(data.post.productHighlights || "");
     }
 
-    const failed = data.meta?.failed || [];
+    const failed = job.result?.meta?.failed || [];
+    const failedList = failed
+      .map((f) => (typeof f === "string" ? null : f.provider))
+      .filter((p): p is string => Boolean(p));
+    setFailedProviders(failedList);
+    const style = job.result?.meta?.style;
+    if (style && typeof style === "object") {
+      setStyleMeta(style as Record<string, StyleMetaEntry>);
+    } else {
+      setStyleMeta(null);
+    }
+    const seo = job.result?.meta?.seo;
+    if (seo && typeof seo === "object") {
+      setSeoMeta(seo as Record<string, SeoMetaEntry>);
+    } else {
+      setSeoMeta(null);
+    }
     if (failed.length) {
       const detail = failed
         .map((f) => (typeof f === "string" ? f : `${f.provider}: ${f.error}`))
@@ -413,9 +565,9 @@ export function PostWorkspace({
       setDualFailNotice(null);
     }
 
-    if (data.needsSelection && data.drafts && data.drafts.length >= 2) {
+    if (job.result?.needsSelection && job.result.drafts && job.result.drafts.length >= 2) {
       setNeedsSelection(true);
-      setCandidateDrafts(data.drafts);
+      setCandidateDrafts(job.result.drafts);
       setTitle("");
       setBody("");
       return;
@@ -430,6 +582,151 @@ export function PostWorkspace({
     );
     setEditorTab("edit");
     router.refresh();
+  }
+
+  async function generateDraft() {
+    if (needsSelection || body.trim()) {
+      const ok = window.confirm(
+        "새 초안을 만들면 지금 비교·편집 중인 내용이 바뀔 수 있어요. 계속할까요?",
+      );
+      if (!ok) return;
+    }
+
+    const isTopic = post.mode === "topic";
+    if (isTopic && keyword.trim().length < 2) {
+      setError("주제를 2자 이상 입력해 주세요.");
+      return;
+    }
+
+    setSnapshotBeforeCompare({ title, body });
+    setBusy("generate");
+    setGenerateComplete(false);
+    setGenerateKind(isTopic ? "generate_topic" : "generate");
+    setGeneratePhase(isTopic ? "research" : "assemble");
+    setGeneratePhaseLabel(
+      phaseStatusLabel(isTopic ? "research" : "assemble", isTopic ? "generate_topic" : "generate"),
+    );
+    setError(null);
+    setCopyMsg(null);
+    setDualFailNotice(null);
+    setNeedsSelection(false);
+    setCandidateDrafts([]);
+    try {
+      const job = await runGenerationJobClient({
+        postId: post.id,
+        body: isTopic
+          ? {
+              kind: "generate_topic",
+              topic: keyword.trim(),
+              length: draftLength,
+              imageCount: topicImageCount,
+              imageSource: topicUseAiImages ? "ai" : "unsplash",
+              replaceImages: topicReplaceImages,
+            }
+          : {
+              kind: "generate",
+              keyword: keyword || undefined,
+              productHighlights: productHighlights.trim() || null,
+              captionTone: captionTone || BRAND_CAPTION_TONE,
+              length: draftLength,
+            },
+        onPhase: (j) => {
+          noteGeneratePhase(j);
+        },
+      });
+      await applyCompletedGenerateJob(job);
+    } catch (e) {
+      setBusy(null);
+      clearGenerateUi();
+      setError(e instanceof Error ? e.message : "초안 생성 실패");
+    }
+  }
+
+  async function retryFailedProvider(provider: string) {
+    if (provider !== "gpt" && provider !== "gemini") return;
+    const isTopic = post.mode === "topic";
+    setBusy("retry-draft");
+    setGenerateComplete(false);
+    setGenerateKind(isTopic ? "generate_topic" : "generate");
+    setGeneratePhase("draft");
+    setGeneratePhaseLabel(phaseStatusLabel("draft", isTopic ? "generate_topic" : "generate"));
+    setError(null);
+    try {
+      const job = await runGenerationJobClient({
+        postId: post.id,
+        body: isTopic
+          ? {
+              kind: "generate_topic",
+              topic: keyword.trim() || post.keyword || "주제",
+              length: draftLength,
+              imageCount: topicImageCount,
+              imageSource: topicUseAiImages ? "ai" : "unsplash",
+              replaceImages: false,
+              providers: [provider],
+              mergeExistingDrafts: true,
+            }
+          : {
+              kind: "generate",
+              keyword: keyword || undefined,
+              productHighlights: productHighlights.trim() || null,
+              captionTone: captionTone || BRAND_CAPTION_TONE,
+              length: draftLength,
+              providers: [provider],
+              mergeExistingDrafts: true,
+            },
+        onPhase: (j) => {
+          noteGeneratePhase(j);
+        },
+      });
+      await applyCompletedGenerateJob(job);
+    } catch (e) {
+      setBusy(null);
+      clearGenerateUi();
+      setError(e instanceof Error ? e.message : "재시도 실패");
+    }
+  }
+
+  async function learnFromPublished() {
+    setBusy("learn-publish");
+    setError(null);
+    setCopyMsg(null);
+    const res = await fetch(`/api/posts/${post.id}/learn-from-publish`, { method: "POST" });
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      sampleCount?: number;
+    };
+    setBusy(null);
+    if (!res.ok) {
+      setError(data.error || "스타일 학습에 실패했습니다.");
+      return;
+    }
+    setCopyMsg(
+      typeof data.sampleCount === "number"
+        ? `올린 글을 원문에 반영하고 문체를 다시 학습했습니다. (샘플 ${data.sampleCount})`
+        : "올린 글을 원문에 반영하고 문체를 다시 학습했습니다.",
+    );
+  }
+
+  async function fillEmptyCaptions() {
+    setBusy("fill-captions");
+    setError(null);
+    const res = await fetch(`/api/posts/${post.id}/images/fill-captions`, { method: "POST" });
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      images?: PostImage[];
+      filled?: number;
+    };
+    setBusy(null);
+    if (!res.ok || !data.images) {
+      setError(data.error || "장면 키워드 자동 채우기에 실패했습니다.");
+      return;
+    }
+    setPost((prev) => ({ ...prev, images: data.images! }));
+    setCopyMsg(
+      data.filled
+        ? `빈 장면 키워드 ${data.filled}개를 채웠습니다.`
+        : "채울 빈 장면 키워드가 없습니다.",
+    );
   }
 
   async function selectDraft(draftId: string) {
@@ -501,12 +798,14 @@ export function PostWorkspace({
     if (!title.trim() && !body.trim()) return;
     setBusy("copy");
     setCopyMsg(null);
+    setShowCopyGuide(false);
     setError(null);
     try {
       const html = `<h1>${escapeTitle(title)}</h1>${body}`;
       const plain = [title.trim(), "", htmlToPlainText(body)].filter(Boolean).join("\n");
       await copyHtmlForBlogEditor(html, plain);
       setCopyMsg("복사됨 — 네이버/티스토리 글쓰기에 붙여넣으세요.");
+      setShowCopyGuide(true);
     } catch {
       setError("복사에 실패했습니다. 브라우저 클립보드 권한을 확인해 주세요.");
     } finally {
@@ -615,7 +914,14 @@ export function PostWorkspace({
     router.refresh();
   }
 
-  async function setStatus(status: "published" | "archived" | "draft") {
+  async function setStatus(
+    status: "published" | "archived" | "draft",
+    options?: {
+      publishedUrl?: string | null;
+      publishPlatform?: "naver" | "tistory" | "other" | null;
+      skipUrl?: boolean;
+    },
+  ) {
     if (status === "published" && !title.trim()) {
       setError("올림 표시 전에 제목을 입력하세요.");
       return;
@@ -624,7 +930,16 @@ export function PostWorkspace({
       setError("올림 표시 전에 본문을 입력하세요.");
       return;
     }
-    if (status === "published" && !confirm("네이버/티스토리에 올렸다면 올림 표시로 바꿀까요?")) return;
+    if (status === "published" && !options) {
+      setPublishUrlInput(post.publishedUrl || "");
+      setPublishPlatform(
+        post.publishPlatform === "tistory" || post.publishPlatform === "other"
+          ? post.publishPlatform
+          : "naver",
+      );
+      setPublishModalOpen(true);
+      return;
+    }
     if (status === "archived" && !confirm("이 포스트를 보관할까요?")) return;
 
     setBusy("status");
@@ -637,10 +952,21 @@ export function PostWorkspace({
         title: title || undefined,
         body: body || undefined,
         keyword: keyword || null,
+        ...(status === "published"
+          ? {
+              publishedUrl: options?.skipUrl ? null : options?.publishedUrl || null,
+              publishPlatform: options?.skipUrl
+                ? null
+                : options?.publishPlatform || "other",
+            }
+          : status === "draft"
+            ? { clearPublishArchive: true }
+            : {}),
       }),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
     setBusy(null);
+    setPublishModalOpen(false);
     if (!res.ok || !data.post) {
       setError(data.error || "상태 변경 실패");
       return;
@@ -654,53 +980,268 @@ export function PostWorkspace({
 
   const canCopy = Boolean(title.trim() || body.replace(/<[^>]+>/g, "").trim());
 
+  const generateOpen = busy === "generate" || busy === "retry-draft";
+  const generateRange = phaseProgressRange(generatePhase, generateKind);
+
   return (
     <div className="space-y-6">
+      <GenerationProgressModal
+        open={generateOpen}
+        title={busy === "retry-draft" ? "초안 재시도 중" : "초안 생성 중"}
+        statusLine={generatePhaseLabel || "생성 준비 중…"}
+        target={generateRange.floor}
+        ceiling={generateRange.ceiling}
+        complete={generateComplete}
+        detail="단계가 바뀔 때마다 진행률이 올라가고, 대기 중에도 조금씩 움직입니다."
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-[color:var(--muted)]">
             <Link href={`/brands/${post.brand.id}`} className="hover:underline">
               {post.brand.name}
             </Link>
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900">
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
             {post.title || "글 편집"}
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            className={
-              post.status === "published"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : post.status === "archived"
-                  ? "border-zinc-300 bg-zinc-100 text-zinc-600"
-                  : undefined
-            }
-          >
-            {statusLabel}
-          </Badge>
-          <NewCutLink brandId={post.brandId} postId={post.id}>
-            <Button type="button" variant="outline" size="sm">
-              New Cut 쇼츠 만들기
-            </Button>
-          </NewCutLink>
+          <span title={statusHint || undefined}>
+            <Badge
+              className={
+                post.status === "published"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : post.status === "archived"
+                    ? "border-[var(--border)] bg-[var(--background)] text-[color:var(--muted)]"
+                    : post.status === "collecting"
+                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                      : undefined
+              }
+            >
+              {statusLabel}
+            </Badge>
+          </span>
+          {!showNewCutCta ? (
+            <NewCutLink brandId={post.brandId} postId={post.id}>
+              <Button type="button" variant="outline" size="sm">
+                New Cut 쇼츠 만들기
+              </Button>
+            </NewCutLink>
+          ) : null}
         </div>
       </div>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {dualFailNotice ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          {dualFailNotice}
+      {statusHint ? (
+        <p className="text-xs text-[color:var(--muted)]" title={statusHint}>
+          {statusHint}
         </p>
       ) : null}
 
+      {error ? (
+        <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p>{error}</p>
+          {/실패|다시 시도/.test(error) ? (
+            <Button type="button" size="sm" variant="outline" onClick={() => void generateDraft()}>
+              다시 생성
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {dualFailNotice ? (
+        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p>{dualFailNotice}</p>
+          {failedProviders.length ? (
+            <div className="flex flex-wrap gap-2">
+              {failedProviders.map((p) => (
+                <Button
+                  key={p}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy === "retry-draft"}
+                  onClick={() => void retryFailedProvider(p)}
+                >
+                  {p === "gpt" ? "버전 A" : "버전 B"} 다시 만들기
+                </Button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {styleMeta ? (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)]">
+          <p className="font-medium text-[color:var(--foreground)]">학습 문체 점수</p>
+          <ul className="mt-1 space-y-1">
+            {Object.entries(styleMeta).map(([provider, meta]) => (
+              <li key={provider}>
+                {provider === "gpt" ? "버전 A" : provider === "gemini" ? "버전 B" : provider}
+                {typeof meta.score === "number" ? ` · ${Math.round(meta.score * 100)}점` : ""}
+                {meta.repaired ? " · 보정 적용" : ""}
+                {meta.issues?.length ? ` · ${meta.issues.slice(0, 2).join(", ")}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {seoMeta ? (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)]">
+          <p className="font-medium text-[color:var(--foreground)]">SEO 점검 점수</p>
+          <p className="mt-0.5 text-xs text-[color:var(--muted)]">
+            내부 체크리스트(휴리스틱)입니다. 네이버·구글 실제 순위나 1페이지 노출을 보장하지 않습니다.
+          </p>
+          <ul className="mt-1 space-y-1">
+            {Object.entries(seoMeta).map(([provider, meta]) => (
+              <li key={provider}>
+                {provider === "gpt" ? "버전 A" : provider === "gemini" ? "버전 B" : provider}
+                {typeof meta.score === "number" ? ` · ${meta.score}점` : ""}
+                {meta.repaired ? " · 1회 보정" : ""}
+                {meta.issues?.length ? ` · ${meta.issues.slice(0, 2).join(", ")}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {post.status === "published" && !post.publishedUrl ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          URL 미기록 — 나중에 올린 글 주소를 저장해 두면 관리가 쉽습니다.
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="ml-2"
+            onClick={() => setPublishModalOpen(true)}
+          >
+            URL 기록
+          </Button>
+        </p>
+      ) : null}
+      {post.publishedUrl ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--muted)]">
+          <p>
+            올린 글:{" "}
+            <a
+              href={post.publishedUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              {post.publishedUrl}
+            </a>
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy === "learn-publish"}
+            onClick={() => void learnFromPublished()}
+          >
+            스타일 학습에 추가
+          </Button>
+        </div>
+      ) : null}
+      {bodyLocked ? (
+        <p className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)]">
+          아직 준비 중이에요. 초안이 만들어진 뒤 본문을 자유롭게 편집할 수 있어요.
+        </p>
+      ) : null}
+      {hasBodyText ? (
+        <p className="text-xs text-[color:var(--muted)]">
+          사진을 추가한 뒤 초안을 다시 만들면 본문이 새로 생성됩니다. 기존 초안은 재생성 전까지 유지됩니다.
+        </p>
+      ) : null}
+      {publishModalOpen ? (
+        <div className="space-y-3 rounded-lg border border-[var(--border)] bg-white p-4 shadow-sm">
+          <p className="text-sm font-medium text-[color:var(--foreground)]">올린 글 URL (선택)</p>
+          <p className="text-xs text-[color:var(--muted)]">
+            네이버/티스토리에 직접 올린 뒤 주소를 남겨 두세요. 건너뛰어도 올림 표시는 됩니다.
+          </p>
+          <Label>
+            <span>플랫폼</span>
+            <select
+              className="mt-1.5 flex h-10 w-full rounded-md border border-[var(--border)] bg-white px-3 text-sm"
+              value={publishPlatform}
+              onChange={(e) =>
+                setPublishPlatform(e.target.value as "naver" | "tistory" | "other")
+              }
+            >
+              <option value="naver">네이버 블로그</option>
+              <option value="tistory">티스토리</option>
+              <option value="other">기타</option>
+            </select>
+          </Label>
+          <Label>
+            <span>게시 URL</span>
+            <Input
+              value={publishUrlInput}
+              onChange={(e) => setPublishUrlInput(e.target.value)}
+              placeholder="https://blog.naver.com/..."
+            />
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              disabled={busy === "status"}
+              onClick={() => {
+                if (post.status === "published") {
+                  void (async () => {
+                    setBusy("status");
+                    const res = await fetch(`/api/posts/${post.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        publishedUrl: publishUrlInput.trim() || null,
+                        publishPlatform: publishUrlInput.trim()
+                          ? publishPlatform
+                          : null,
+                      }),
+                    });
+                    const data = (await res.json().catch(() => ({}))) as {
+                      error?: string;
+                      post?: PostData;
+                    };
+                    setBusy(null);
+                    setPublishModalOpen(false);
+                    if (!res.ok || !data.post) {
+                      setError(data.error || "URL 저장 실패");
+                      return;
+                    }
+                    setPost(data.post);
+                    router.refresh();
+                  })();
+                  return;
+                }
+                void setStatus("published", {
+                  publishedUrl: publishUrlInput.trim() || null,
+                  publishPlatform,
+                  skipUrl: !publishUrlInput.trim(),
+                });
+              }}
+            >
+              {post.status === "published"
+                ? "URL 저장"
+                : publishUrlInput.trim()
+                  ? "URL 저장 후 올림 표시"
+                  : "URL 없이 올림 표시"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy === "status"}
+              onClick={() => setPublishModalOpen(false)}
+            >
+              취소
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
-      <Card className="h-fit order-2 lg:order-1 lg:sticky lg:top-4">
+      <Card className="order-2 h-fit lg:sticky lg:top-20 lg:order-1">
         <CardHeader>
           <CardTitle>사진 & 장면 키워드</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-zinc-600">
+          <p className="text-sm text-[color:var(--muted)]">
             키워드는 사실만 적고, 문장·이모지·서식은 초안 생성에서 문체에 맞게 만듭니다.
           </p>
           <Label>
@@ -715,7 +1256,7 @@ export function PostWorkspace({
           <Label>
             <span>문장체 (말투)</span>
             <select
-              className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              className="mt-1.5 flex h-10 w-full rounded-md border border-[var(--border)] bg-white px-3 text-sm text-[color:var(--foreground)] outline-none focus:border-[var(--accent)]"
               value={captionTone || BRAND_CAPTION_TONE}
               onChange={(e) => setCaptionTone(e.target.value)}
             >
@@ -725,25 +1266,61 @@ export function PostWorkspace({
                 </option>
               ))}
             </select>
-            <span className="mt-1 block text-xs font-normal text-zinc-500">
+            <span className="mt-1 block text-xs font-normal text-[color:var(--muted)]">
               초안 생성 시 이 말투로 문장을 씁니다. 이모지·강조·색·글자 크기는 학습 스타일을 더 적극 반영합니다.
             </span>
           </Label>
-          {post.mode !== "topic" ? (
-            <Label>
-              <span>글 길이</span>
-              <select
-                className="mt-1.5 flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
-                value={draftLength}
-                onChange={(e) => setDraftLength(e.target.value as TopicLength)}
-              >
-                {TOPIC_LENGTHS.map((id) => (
-                  <option key={id} value={id}>
-                    {TOPIC_LENGTH_PRESETS[id].label} — {TOPIC_LENGTH_PRESETS[id].hint}
-                  </option>
-                ))}
-              </select>
-            </Label>
+          <Label>
+            <span>글 길이</span>
+            <select
+              className="mt-1.5 flex h-10 w-full rounded-md border border-[var(--border)] bg-white px-3 text-sm text-[color:var(--foreground)] outline-none focus:border-[var(--accent)]"
+              value={draftLength}
+              onChange={(e) => {
+                const next = e.target.value as TopicLength;
+                setDraftLength(next);
+                if (post.mode === "topic") {
+                  setTopicImageCount(TOPIC_LENGTH_PRESETS[next].sectionCount);
+                }
+              }}
+            >
+              {TOPIC_LENGTHS.map((id) => (
+                <option key={id} value={id}>
+                  {TOPIC_LENGTH_PRESETS[id].label} — {TOPIC_LENGTH_PRESETS[id].hint}
+                </option>
+              ))}
+            </select>
+          </Label>
+          {post.mode === "topic" ? (
+            <div className="space-y-3 rounded-md border border-[var(--border)] bg-[var(--background)]/80 p-3">
+              <Label>
+                <span>이미지 수</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={6}
+                  value={topicImageCount}
+                  onChange={(e) =>
+                    setTopicImageCount(Math.min(6, Math.max(1, Number(e.target.value) || 1)))
+                  }
+                />
+              </Label>
+              <label className="flex items-center gap-2 text-sm text-[color:var(--foreground)]">
+                <input
+                  type="checkbox"
+                  checked={topicUseAiImages}
+                  onChange={(e) => setTopicUseAiImages(e.target.checked)}
+                />
+                AI 이미지 사용 (기본: Unsplash)
+              </label>
+              <label className="flex items-center gap-2 text-sm text-[color:var(--foreground)]">
+                <input
+                  type="checkbox"
+                  checked={topicReplaceImages}
+                  onChange={(e) => setTopicReplaceImages(e.target.checked)}
+                />
+                기존 이미지 교체
+              </label>
+            </div>
           ) : null}
           <Label>
             <span>제품 특장점 (선택)</span>
@@ -760,6 +1337,20 @@ export function PostWorkspace({
             onFiles={(files) => void uploadImages(files)}
           />
 
+          {emptyCaptionCount > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <span>빈 장면 키워드 {emptyCaptionCount}개</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy === "fill-captions"}
+                onClick={() => void fillEmptyCaptions()}
+              >
+                자동 채우기
+              </Button>
+            </div>
+          ) : null}
           <ImageGalleryBoard
             images={post.images}
             busy={busy}
@@ -777,7 +1368,11 @@ export function PostWorkspace({
               </Badge>
             ) : null}
             <Button type="button" onClick={() => void generateDraft()} disabled={busy === "generate" || !keyword.trim()}>
-              {busy === "generate" ? "두 버전 생성 중…" : "초안 생성"}
+              {busy === "generate"
+                ? "생성 중…"
+                : post.mode === "topic"
+                  ? "주제 글 다시 만들기"
+                  : "초안 생성"}
             </Button>
             {post.images.length > 0 && body.trim() && !needsSelection ? (
               <Button
@@ -790,9 +1385,31 @@ export function PostWorkspace({
               </Button>
             ) : null}
           </div>
-          <p className="text-xs text-zinc-500">
-            생성 시 두 버전을 동시에 만들고, 마음에 드는 쪽을 고를 수 있어요.
+          <p className="text-xs text-[color:var(--muted)]">
+            플랜에 따라 한 버전 또는 두 버전을 만들고, 마음에 드는 쪽을 고를 수 있어요.
           </p>
+          {showNewCutCta ? (
+            <div className="rounded-xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-4 text-white">
+              <p className="text-sm font-semibold">검증 초안 → 쇼츠 원소스</p>
+              <p className="mt-1 text-xs text-[var(--border)]">
+                같은 Ditodio 계정으로 New Cut에 넘겨 쇼츠를 이어서 만들 수 있어요.
+              </p>
+              <div className="mt-3">
+                <NewCutLink brandId={post.brandId} postId={post.id}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="bg-white text-[color:var(--foreground)] hover:bg-[var(--accent-soft)]"
+                  >
+                    New Cut 열기
+                  </Button>
+                </NewCutLink>
+              </div>
+              <p className="mt-2 text-[11px] text-[color:var(--muted)]">
+                연결에 실패하면 New Cut 주소·로그인을 확인한 뒤 다시 시도해 주세요.
+              </p>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -801,7 +1418,7 @@ export function PostWorkspace({
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <CardTitle>초안 비교</CardTitle>
-              <p className="mt-1 text-sm text-zinc-600">
+              <p className="mt-1 text-sm text-[color:var(--muted)]">
                 마음에 드는 버전을 선택하면 편집기로 이어집니다.
               </p>
             </div>
@@ -831,13 +1448,13 @@ export function PostWorkspace({
               {candidateDrafts.map((draft) => (
                 <div
                   key={draft.id}
-                  className="flex flex-col rounded-xl border border-zinc-200 bg-white"
+                  className="flex flex-col rounded-xl border border-[var(--border)] bg-white"
                 >
-                  <div className="border-b border-zinc-100 px-4 py-3">
-                    <p className="text-sm font-semibold text-zinc-900">
+                  <div className="border-b border-[var(--border)] px-4 py-3">
+                    <p className="text-sm font-semibold text-[color:var(--foreground)]">
                       {draft.label || "버전"}
                     </p>
-                    <p className="mt-1 line-clamp-2 text-sm text-zinc-700">
+                    <p className="mt-1 line-clamp-2 text-sm text-[color:var(--foreground)]">
                       {draft.title || "(제목 없음)"}
                     </p>
                   </div>
@@ -846,10 +1463,10 @@ export function PostWorkspace({
                     dangerouslySetInnerHTML={{
                       __html:
                         draft.body ||
-                        '<p class="text-zinc-500">미리볼 본문이 없습니다.</p>',
+                        '<p class="text-[color:var(--muted)]">미리볼 본문이 없습니다.</p>',
                     }}
                   />
-                  <div className="border-t border-zinc-100 p-3">
+                  <div className="border-t border-[var(--border)] p-3">
                     <Button
                       type="button"
                       className="w-full"
@@ -869,17 +1486,17 @@ export function PostWorkspace({
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>초안 편집기</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-lg border border-zinc-200 p-0.5 text-xs">
+            <div className="flex rounded-lg border border-[var(--border)] p-0.5 text-xs">
               <button
                 type="button"
-                className={`rounded-md px-3 py-1.5 ${editorTab === "edit" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+                className={`rounded-md px-3 py-1.5 ${editorTab === "edit" ? "bg-[var(--accent)] text-white" : "text-[color:var(--muted)]"}`}
                 onClick={() => setEditorTab("edit")}
               >
                 편집
               </button>
               <button
                 type="button"
-                className={`rounded-md px-3 py-1.5 ${editorTab === "preview" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}
+                className={`rounded-md px-3 py-1.5 ${editorTab === "preview" ? "bg-[var(--accent)] text-white" : "text-[color:var(--muted)]"}`}
                 onClick={() => setEditorTab("preview")}
               >
                 미리보기
@@ -902,7 +1519,7 @@ export function PostWorkspace({
                   <button
                     key={candidate}
                     type="button"
-                    className="rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
+                    className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[color:var(--foreground)] hover:bg-[var(--accent-soft)]"
                     onClick={() => setTitle(candidate)}
                   >
                     {candidate}
@@ -911,12 +1528,12 @@ export function PostWorkspace({
               </div>
             ) : null}
 
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 space-y-3">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium text-zinc-800">머리말·꼬리말 템플릿</p>
+                <p className="text-sm font-medium text-[color:var(--foreground)]">머리말·꼬리말 템플릿</p>
                 <Link
                   href={`/brands/${post.brandId}/templates`}
-                  className="text-xs text-zinc-500 hover:text-zinc-800"
+                  className="text-xs text-[color:var(--muted)] hover:text-[var(--accent)]"
                 >
                   템플릿 관리
                 </Link>
@@ -925,7 +1542,7 @@ export function PostWorkspace({
                 <Label>
                   <span>머리말</span>
                   <select
-                    className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                    className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
                     value={headerTemplateId}
                     disabled={busy === "template-select" || busy === "template-apply"}
                     onChange={(e) => {
@@ -945,7 +1562,7 @@ export function PostWorkspace({
                 <Label>
                   <span>꼬리말</span>
                   <select
-                    className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                    className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
                     value={footerTemplateId}
                     disabled={busy === "template-select" || busy === "template-apply"}
                     onChange={(e) => {
@@ -975,7 +1592,7 @@ export function PostWorkspace({
                 >
                   {busy === "template-apply" ? "적용 중…" : "본문에 적용"}
                 </Button>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-[color:var(--muted)]">
                   선택만 저장되고, 적용 시 머리말은 맨 위·꼬리말은 맨 아래에 넣습니다. 다시 적용하면 교체됩니다.
                 </p>
               </div>
@@ -995,37 +1612,62 @@ export function PostWorkspace({
               />
             ) : (
               <div
-                className="rich-doc min-h-[28rem] rounded-lg border border-zinc-200 bg-white px-4 py-3"
+                className="rich-doc min-h-[28rem] rounded-lg border border-[var(--border)] bg-white px-4 py-3"
                 dangerouslySetInnerHTML={{
-                  __html: body || '<p class="text-zinc-500">미리볼 본문이 없습니다.</p>',
+                  __html: body || '<p class="text-[color:var(--muted)]">미리볼 본문이 없습니다.</p>',
                 }}
               />
             )}
 
-            {copyMsg ? (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-                {copyMsg}
-              </p>
+            {copyMsg || showCopyGuide ? (
+              <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950">
+                {copyMsg ? <p className="font-medium">{copyMsg}</p> : null}
+                <ol className="list-decimal space-y-1 pl-4 text-emerald-900/90">
+                  <li>네이버·티스토리 글쓰기에 붙여넣기</li>
+                  <li>사진·서식이 깨지면 용량·이미지 개수를 줄여 다시 복사</li>
+                  <li>올렸다면 아래 <strong>올림 표시</strong>로 기록</li>
+                </ol>
+                <p className="text-xs text-emerald-800/80">
+                  팁: 네이버는 큰 이미지·복잡한 표가 잘릴 수 있어요. 티스토리는 HTML 붙여넣기가 비교적 안정적입니다.
+                </p>
+                {post.status !== "published" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busy === "status" || !canCopy}
+                    onClick={() => setStatus("published")}
+                  >
+                    올림 표시
+                  </Button>
+                ) : null}
+              </div>
             ) : (
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-[color:var(--muted)]">
                 복사 후 네이버/티스토리 글쓰기에 붙여넣으면 서식과 사진 유지를 시도합니다.
               </p>
             )}
 
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={busy === "save"}>
+              <Button type="submit" disabled={busy === "save" || bodyLocked}>
                 {busy === "save" ? "저장 중…" : "초안 저장"}
               </Button>
               {post.status === "published" ? (
-                <Button type="button" variant="outline" disabled={busy === "status"} onClick={() => setStatus("draft")}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy === "status"}
+                  onClick={() => setStatus("draft")}
+                  title={statusHint}
+                >
                   올림 표시 취소
                 </Button>
               ) : (
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={busy === "status" || !canCopy}
-                  onClick={() => setStatus("published")}
+                  disabled={busy === "status" || !canCopy || bodyLocked}
+                  onClick={() => void setStatus("published")}
+                  title="외부에 직접 올린 뒤, 여기서 완료로 표시합니다."
                 >
                   올림 표시
                 </Button>

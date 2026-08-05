@@ -141,13 +141,13 @@ export function BrandTemplateWorkspace({ brandId, brandName, initialTemplates }:
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-zinc-500">{brandName}</p>
-          <h2 className="text-xl font-semibold text-zinc-900">머리말·꼬리말 템플릿</h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="text-sm text-[color:var(--muted)]">{brandName}</p>
+          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">머리말·꼬리말 템플릿</h2>
+          <p className="mt-1 text-sm text-[color:var(--muted)]">
             에디터로 이미지·텍스트를 넣어 두고, 포스트 편집에서 선택한 뒤 적용할 수 있습니다.
           </p>
         </div>
-        <Link href={`/brands/${brandId}`} className="text-sm text-zinc-500 hover:text-zinc-800">
+        <Link href={`/brands/${brandId}`} className="text-sm text-[color:var(--muted)] hover:text-[var(--accent)]">
           ← 테마 학습
         </Link>
       </div>
@@ -193,7 +193,7 @@ export function BrandTemplateWorkspace({ brandId, brandName, initialTemplates }:
               <Label>
                 <span>종류</span>
                 <select
-                  className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                  className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
                   value={kind}
                   onChange={(e) => setKind(e.target.value === "footer" ? "footer" : "header")}
                 >
@@ -204,7 +204,7 @@ export function BrandTemplateWorkspace({ brandId, brandName, initialTemplates }:
             </div>
 
             <div>
-              <p className="mb-1.5 text-sm font-medium text-zinc-800">내용</p>
+              <p className="mb-1.5 text-sm font-medium text-[color:var(--foreground)]">내용</p>
               <RichEditor
                 value={html}
                 revision={editorRevision}
@@ -256,17 +256,17 @@ function TemplateList({
       </CardHeader>
       <CardContent>
         {items.length === 0 ? (
-          <p className="text-sm text-zinc-500">아직 없습니다.</p>
+          <p className="text-sm text-[color:var(--muted)]">아직 없습니다.</p>
         ) : (
           <ul className="space-y-2">
             {items.map((item) => (
               <li
                 key={item.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 px-3 py-2"
+                className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border)] px-3 py-2"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-zinc-900">{item.name}</p>
-                  <p className="text-xs text-zinc-500">
+                  <p className="truncate text-sm font-medium text-[color:var(--foreground)]">{item.name}</p>
+                  <p className="text-xs text-[color:var(--muted)]">
                     {new Date(item.updatedAt).toLocaleString("ko-KR")}
                   </p>
                 </div>

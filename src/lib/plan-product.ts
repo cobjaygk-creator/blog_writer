@@ -156,10 +156,23 @@ export async function ensurePlanProductsSeeded() {
           sourcePostsPerBrand: limits.sourcePostsPerBrand,
           postsPerDay: limits.postsPerDay,
           imagesPerPost: limits.imagesPerPost,
+          dualGenerationEnabled: limits.dualGenerationEnabled,
           generatesPerDay: limits.generatesPerDay,
           limitsJson,
           priceMonthlyKrw: prices.priceMonthlyKrw,
           priceYearlyKrw: prices.priceYearlyKrw,
+        },
+      });
+    } else if (
+      code === "free" &&
+      existing.dualGenerationEnabled !== limits.dualGenerationEnabled
+    ) {
+      // Align free dual gate with product policy (admin may re-toggle afterwards).
+      await prisma.planProduct.update({
+        where: { id: existing.id },
+        data: {
+          dualGenerationEnabled: limits.dualGenerationEnabled,
+          limitsJson: { ...lj, dualGenerationEnabled: limits.dualGenerationEnabled },
         },
       });
     }

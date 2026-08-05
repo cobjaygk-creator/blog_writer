@@ -96,7 +96,9 @@ export async function POST(request: Request, { params }: Params) {
     }
   }
 
-  if (post.status === "draft") {
+  // Keep draft status when a body already exists so editing/save stay unlocked.
+  const hasBody = Boolean(post.body?.replace(/<[^>]+>/g, "").trim());
+  if (post.status === "draft" && !hasBody) {
     await prisma.post.update({
       where: { id },
       data: { status: "collecting" },

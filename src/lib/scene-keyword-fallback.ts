@@ -39,6 +39,33 @@ export function synthesizeSceneKeywords(
   return map;
 }
 
+/**
+ * Phase-1 minimal fallback when review themes are unavailable.
+ * Uses keyword / product name (+ optional vision hint). Never overwrites non-empty captions.
+ */
+export function fillEmptyCaptionsWithKeyword(
+  images: SceneKeywordImage[],
+  keyword: string,
+  options?: { productName?: string | null; visionCaptions?: string[] },
+): SceneKeywordMap {
+  const base = (options?.productName?.trim() || keyword.trim()).slice(0, 80);
+  const map: SceneKeywordMap = {};
+  if (!images.length || !base) return map;
+
+  let emptyIndex = 0;
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    if (img.caption?.trim()) continue;
+    emptyIndex += 1;
+    const vision = options?.visionCaptions?.[i]?.trim() || "";
+    const label = vision
+      ? `${vision} · ${base}`.slice(0, 200)
+      : `${base} 장면 ${emptyIndex}`.slice(0, 200);
+    map[img.id] = label;
+  }
+  return map;
+}
+
 /** Apply synthesized keywords onto in-memory image captions (does not persist). */
 export function applySceneKeywordMap<T extends SceneKeywordImage>(
   images: T[],

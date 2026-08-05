@@ -27,6 +27,10 @@ export type SharedDraftInput = {
   } | null;
   voiceTone?: string | null;
   length?: TopicLength | string | null;
+  /** worklog | product — shapes prompt emphasis */
+  postMode?: "worklog" | "product" | null;
+  /** Formatted web research brief (esp. when images are empty). */
+  webResearch?: string | null;
 };
 
 export type ParallelDraftResult = {
@@ -106,4 +110,53 @@ export async function generateDraftsInParallel(
       };
     }),
   );
+}
+
+/** Generate one or more providers (order preserved). */
+export async function generateDraftsForProviders(
+  input: SharedDraftInput,
+  providers: DraftProvider[],
+): Promise<ParallelDraftResult[]> {
+  const unique = [...new Set(providers)];
+  if (unique.length === 0) return [];
+  if (unique.length === 1) {
+    return [await generateDraftWithProvider(input, unique[0])];
+  }
+  console.info(
+    `[dual-draft] parallel generation for ${unique.join("+")} (context already assembled)`,
+  );
+  const settled = await Promise.allSettled(
+    unique.map((p) => generateDraftWithProvider(input, p)),
+  );
+  return Promise.all(
+    settled.map(async (item, i) => {
+      const provider = unique[i];
+      if (item.status === "fulfilled") return item.value;
+      const config = await resolveDraftProviderConfig(provider);
+      const message =
+        item.reason instanceof Error ? item.reason.message : String(item.reason);
+      console.warn(`[dual-draft] ${provider} rejected:`, message);
+      return {
+        provider,
+        modelId: config.model,
+        title: "",
+        titleCandidates: [],
+        body: "",
+        usedFallback: false,
+        error: message,
+      };
+    }),
+  );
+}
+
+/** Dual when plan allows; otherwise GPT-only. */
+export async function generateDraftsForPlan(
+  input: SharedDraftInput,
+  dualEnabled: boolean,
+): Promise<ParallelDraftResult[]> {
+  if (!dualEnabled) {
+    console.info("[dual-draft] single-provider generation (GPT)");
+    return [await generateDraftWithProvider(input, "gpt")];
+  }
+  return generateDraftsInParallel(input);
 }

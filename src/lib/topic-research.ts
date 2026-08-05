@@ -23,11 +23,25 @@ export type TopicResearchBrief = {
   usedFallback: boolean;
 };
 
+type ResearchMode = "topic" | "keyword";
+
 /**
  * Search news/blogs for a topic and distill a cross-checked research brief.
  * Used to ground topic drafts in external snippets rather than pure LLM memory.
  */
 export async function researchTopicBrief(topic: string): Promise<TopicResearchBrief> {
+  return researchBrief(topic, "topic");
+}
+
+/**
+ * Slim web research for worklog/product when images are missing but keyword is clear.
+ * Focuses on reviews / install notes / blog mentions rather than breaking news.
+ */
+export async function researchKeywordBrief(keyword: string): Promise<TopicResearchBrief> {
+  return researchBrief(keyword, "keyword");
+}
+
+async function researchBrief(topic: string, mode: ResearchMode): Promise<TopicResearchBrief> {
   const q = topic.trim().slice(0, 120);
   const empty: TopicResearchBrief = {
     topic: q,
@@ -42,15 +56,17 @@ export async function researchTopicBrief(topic: string): Promise<TopicResearchBr
   };
   if (!q) return empty;
 
-  const queries = [
-    `${q}`,
-    `${q} 뉴스`,
-    `${q} 속보`,
-    `${q} 현장 사진`,
-  ];
+  const queries =
+    mode === "keyword"
+      ? [`${q}`, `${q} 후기`, `${q} 리뷰`, `${q} 시공`]
+      : [`${q}`, `${q} 뉴스`, `${q} 속보`, `${q} 현장 사진`];
 
   const groups = await Promise.all(
-    queries.map((query) => collectSearchHits(query, 6, { includeImages: true })),
+    queries.map((query) =>
+      collectSearchHits(query, mode === "keyword" ? 5 : 6, {
+        includeImages: mode === "topic",
+      }),
+    ),
   );
   const hits = dedupeHits(groups.flat());
   const labeled = hits.map(
@@ -68,7 +84,10 @@ export async function researchTopicBrief(topic: string): Promise<TopicResearchBr
     return {
       ...empty,
       facts: [`${q}에 대한 공개 설명이 필요하다`],
-      angles: ["정의", "주요 원인", "영향", "대응"],
+      angles:
+        mode === "keyword"
+          ? ["제품/작업 개요", "체감 포인트", "주의사항", "마무리 팁"]
+          : ["정의", "주요 원인", "영향", "대응"],
       caveats: ["웹 검색 결과가 없어 일반론으로만 구성됨 — 단정·수치 최소화"],
       usedFallback: true,
     };
@@ -79,44 +98,53 @@ export async function researchTopicBrief(topic: string): Promise<TopicResearchBr
     return heuristicBrief(q, labeled, hits);
   }
 
-  try {
-    const { text } = await chatCompletion(
-      [
-        {
-          role: "system",
-          content: `당신은 뉴스·블로그 리서처입니다. JSON만 반환.
+  const system =
+    mode === "keyword"
+      ? `당신은 제품·시공 후기 리서처입니다. JSON만 반환.
+키:
+- facts(string[] 최대 10): 여러 소스에서 겹치는 스펙·장점·단점·시공 포인트. 스니펫에 없는 수치/가격은 넣지 마세요.
+- angles(string[] 최대 6): 글 구성 각도(소개·특장점·시공/사용감·주의·팁).
+- caveats(string[] 최대 5): 불확실·차종별 차이·과장 주의.
+- sources(array 최대 6): { title, url?, note? } — 스니펫에 있을 때만. URL 지어내지 마세요.
+교차검증: 한 소스에만 있는 자극적 주장은 caveats로. 광고 문구 제외.`
+      : `당신은 뉴스·블로그 리서처입니다. JSON만 반환.
 키:
 - facts(string[] 최대 12): 여러 소스에서 겹치거나 신뢰할 만한 사실·설명. 스니펫에 없는 수치/날짜/기관명은 넣지 마세요. 사건·속보면 누가/언제/어디서/무엇을 우선.
 - angles(string[] 최대 8): 글 구성 각도. 사건 뉴스는 타임라인·수사·확인된 사실 위주. 일반 해설은 정의·원인·영향·대응.
 - caveats(string[] 최대 6): 불확실·상충·주의할 점.
 - sources(array 최대 8): { title, url?, note? } — 스니펫에 URL/제목이 있을 때만. URL을 지어내지 마세요. 가능하면 뉴스 매체 URL을 우선.
 교차검증: 한 소스에만 있는 자극적 주장은 facts에 넣지 말고 caveats로. 단 공식 발표·경찰 브리핑은 남겨도 됨.
-톤: 전문·중립. 광고성·낚시성 표현 제외.`,
-        },
+톤: 전문·중립. 광고성·낚시성 표현 제외.`;
+
+  try {
+    const { text } = await chatCompletion(
+      [
+        { role: "system", content: system },
         {
           role: "user",
-          content: `주제: ${q}\n\n검색 스니펫:\n${labeled.join("\n---\n")}`,
+          content: `${mode === "keyword" ? "키워드" : "주제"}: ${q}\n\n검색 스니펫:\n${labeled.join("\n---\n")}`,
         },
       ],
-      { json: true, temperature: 0.15, maxTokens: 1400 },
+      { json: true, temperature: 0.15, maxTokens: mode === "keyword" ? 1100 : 1400 },
     );
     const parsed = JSON.parse(text) as Partial<TopicResearchBrief>;
     const sources = normalizeSources(parsed.sources);
-    // Merge URLs from hits when LLM omitted them but titles match
     const mergedSources = mergeSourcesWithHits(sources, hits);
-    const facts = strArr(parsed.facts, 12);
+    const facts = strArr(parsed.facts, mode === "keyword" ? 10 : 12);
     return {
       topic: q,
       facts,
-      angles: strArr(parsed.angles, 8),
-      caveats: strArr(parsed.caveats, 6),
+      angles: strArr(parsed.angles, mode === "keyword" ? 6 : 8),
+      caveats: strArr(parsed.caveats, mode === "keyword" ? 5 : 6),
       sources: mergedSources,
       hits,
-      isNewsTopic: looksLikeNewsTopic({
-        sources: mergedSources,
-        hits,
-        factCount: facts.length,
-      }),
+      isNewsTopic:
+        mode === "topic" &&
+        looksLikeNewsTopic({
+          sources: mergedSources,
+          hits,
+          factCount: facts.length,
+        }),
       fetchedAt: new Date().toISOString(),
       usedFallback: false,
     };

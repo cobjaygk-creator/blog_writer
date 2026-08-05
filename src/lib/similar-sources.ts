@@ -71,6 +71,31 @@ function substringHits(query: string, hay: string): number {
   return hits;
 }
 
+/** Re-rank stored style anchors by overlap with the current keyword. */
+export function rankAnchorsByKeyword(
+  anchors: Array<{ excerpt: string }>,
+  keyword: string,
+  topK = 4,
+): Array<{ excerpt: string }> {
+  if (!anchors.length) return [];
+  const qTokens = new Set(tokenize(keyword));
+  if (!qTokens.size) return anchors.slice(0, topK);
+
+  return [...anchors]
+    .map((a) => {
+      const tokens = tokenize(a.excerpt);
+      let score = 0;
+      for (const t of tokens) {
+        if (qTokens.has(t)) score += 1;
+      }
+      score += substringHits(keyword, a.excerpt) * 0.5;
+      return { a, score };
+    })
+    .sort((x, y) => y.score - x.score)
+    .slice(0, topK)
+    .map((x) => x.a);
+}
+
 /** Rank brand source posts by keyword/caption overlap + product terms + recency. */
 export function findSimilarSources(
   query: string,

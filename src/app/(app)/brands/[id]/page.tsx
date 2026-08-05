@@ -26,12 +26,16 @@ export default async function BrandDetailPage({ params }: Props) {
   if (!brand) notFound();
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-10">
-        <Link href="/brands" className="text-sm text-zinc-500 hover:text-zinc-800">
+    <main className="mx-auto w-full max-w-5xl px-6 py-10">
+        <Link href="/brands" className="text-sm text-[color:var(--muted)] hover:text-[var(--accent)]">
           ← 테마 등록
         </Link>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900">{brand.name}</h1>
-        <p className="mt-2 text-sm text-zinc-600">네이버 블로그 일괄 가져오기 · 문체 학습</p>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
+          {brand.name}
+        </h1>
+        <p className="mt-2 text-sm text-[color:var(--muted)]">
+          네이버 블로그 일괄 가져오기 · 문체 학습
+        </p>
         <div className="mt-8">
           <BrandWorkspace
             brandId={brand.id}

@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils";
 
 import "prosemirror-view/style/prosemirror.css";
 
-const COLORS = ["#222222", "#E85D04", "#C2255C", "#0B7285", "#2F9E44", "#F08C00", "#5F3DC4"];
+const COLORS = ["#222222", "#5E56F0", "#E85D04", "#C2255C", "#0B7285", "#2F9E44", "#F08C00"];
 const HIGHLIGHTS = ["#FEF08A", "#BBF7D0", "#BAE6FD", "#FBCFE8", "#E9D5FF"];
 const SIZES = [
   { label: "본문", value: "15px" },
@@ -165,15 +165,15 @@ export function RichEditor({
 
   if (!editor) {
     return (
-      <div className="min-h-[28rem] rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-400">
+      <div className="min-h-[28rem] rounded-lg border border-[var(--border)] bg-white px-4 py-3 text-sm text-[color:var(--muted)]">
         에디터 로딩…
       </div>
     );
   }
 
   return (
-    <div className={cn("overflow-hidden rounded-lg border border-zinc-200 bg-white", className)}>
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-zinc-100 px-2 py-1.5">
+    <div className={cn("overflow-hidden rounded-lg border border-[var(--border)] bg-white", className)}>
+      <div className="flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] px-2 py-1.5">
         <IconBtn
           title="실행 취소"
           onClick={() => editor.chain().focus().undo().run()}
@@ -316,14 +316,14 @@ export function RichEditor({
           </IconBtn>
           {colorOpen ? (
             <Dropdown onClose={() => setColorOpen(false)} className="w-52 p-2">
-              <p className="mb-1.5 text-[11px] font-medium text-zinc-500">글자색</p>
+              <p className="mb-1.5 text-[11px] font-medium text-[color:var(--muted)]">글자색</p>
               <div className="mb-2 flex flex-wrap gap-1.5">
                 {palette.map((color) => (
                   <button
                     key={color}
                     type="button"
                     title={color}
-                    className="h-6 w-6 rounded-full border border-zinc-200"
+                    className="h-6 w-6 rounded-full border border-[var(--border)]"
                     style={{ backgroundColor: color }}
                     onClick={() => {
                       editor.chain().focus().setColor(color).run();
@@ -333,7 +333,7 @@ export function RichEditor({
                 ))}
                 <button
                   type="button"
-                  className="h-6 rounded-md border border-zinc-200 px-1.5 text-[10px] text-zinc-600"
+                  className="h-6 rounded-md border border-[var(--border)] px-1.5 text-[10px] text-[color:var(--muted)]"
                   onClick={() => {
                     editor.chain().focus().unsetColor().run();
                     setColorOpen(false);
@@ -342,14 +342,14 @@ export function RichEditor({
                   해제
                 </button>
               </div>
-              <p className="mb-1.5 text-[11px] font-medium text-zinc-500">형광펜</p>
+              <p className="mb-1.5 text-[11px] font-medium text-[color:var(--muted)]">형광펜</p>
               <div className="flex flex-wrap gap-1.5">
                 {HIGHLIGHTS.map((color) => (
                   <button
                     key={color}
                     type="button"
                     title={color}
-                    className="h-6 w-6 rounded-full border border-zinc-200"
+                    className="h-6 w-6 rounded-full border border-[var(--border)]"
                     style={{ backgroundColor: color }}
                     onClick={() => {
                       editor.chain().focus().toggleHighlight({ color }).run();
@@ -359,7 +359,7 @@ export function RichEditor({
                 ))}
                 <button
                   type="button"
-                  className="h-6 rounded-md border border-zinc-200 px-1.5 text-[10px] text-zinc-600"
+                  className="h-6 rounded-md border border-[var(--border)] px-1.5 text-[10px] text-[color:var(--muted)]"
                   onClick={() => {
                     editor.chain().focus().unsetHighlight().run();
                     setColorOpen(false);
@@ -368,7 +368,7 @@ export function RichEditor({
                   해제
                 </button>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1 border-t border-zinc-100 pt-2">
+              <div className="mt-2 flex flex-wrap gap-1 border-t border-[var(--border)] pt-2">
                 {SIZES.map((size) => (
                   <button
                     key={size.value}
@@ -376,8 +376,8 @@ export function RichEditor({
                     className={cn(
                       "rounded-md px-2 py-1 text-[11px]",
                       editor.getAttributes("textStyle").fontSize === size.value
-                        ? "bg-zinc-900 text-white"
-                        : "bg-zinc-100 text-zinc-700",
+                        ? "bg-[var(--accent)] text-white"
+                        : "bg-[var(--background)] text-[color:var(--foreground)]",
                     )}
                     onClick={() => {
                       editor.chain().focus().setFontSize(size.value).run();
@@ -456,7 +456,7 @@ export function RichEditor({
 }
 
 function Sep() {
-  return <span className="mx-1 h-5 w-px self-center bg-zinc-200" />;
+  return <span className="mx-1 h-5 w-px self-center bg-[var(--border)]" />;
 }
 
 function IconBtn({
@@ -479,8 +479,8 @@ function IconBtn({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-700 transition",
-        active ? "bg-zinc-900 text-white" : "hover:bg-zinc-100",
+        "inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--foreground)] transition",
+        active ? "bg-[var(--accent)] text-white" : "hover:bg-[var(--accent-soft)]",
         disabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
       )}
     >
@@ -519,7 +519,7 @@ function Dropdown({
     <div
       data-editor-dropdown
       className={cn(
-        "absolute left-0 top-full z-30 mt-1 min-w-[9rem] rounded-lg border border-zinc-200 bg-white py-1 shadow-lg",
+        "absolute left-0 top-full z-30 mt-1 min-w-[9rem] rounded-lg border border-[var(--border)] bg-white py-1 shadow-lg",
         className,
       )}
     >
@@ -540,7 +540,7 @@ function DropItem({
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50"
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-[color:var(--foreground)] hover:bg-[var(--accent-soft)]"
       onClick={onClick}
     >
       {icon}

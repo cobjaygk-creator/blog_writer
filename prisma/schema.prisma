@@ -62,6 +62,18 @@ enum ImportJobStatus {
   failed
 }
 
+enum GenerationJobStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+enum GenerationJobKind {
+  generate
+  generate_topic
+}
+
 /// Wizard content mode for a post
 enum PostMode {
   worklog
@@ -88,6 +100,7 @@ model User {
   usageDaily        UsageDaily[]
   usagePeriods      UsagePeriod[]
   auditLogs         AdminAuditLog[] @relation("AuditActor")
+  generationJobs    PostGenerationJob[]
 }
 
 /// Umbrella product registry (Ditodio control plane)
@@ -218,6 +231,11 @@ model Post {
   /// Caption voice for vision captions. Null / brand sentinel → StyleTraits.tone
   captionTone       String?
   status            PostStatus     @default(collecting)
+  /// External blog URL after user published (manual archive; no auto-post)
+  publishedUrl      String?
+  publishedAt       DateTime?
+  /// naver | tistory | other
+  publishPlatform   String?
   headerTemplateId  String?
   footerTemplateId  String?
   createdAt         DateTime       @default(now())
@@ -227,12 +245,35 @@ model Post {
   footerTemplate    BrandTemplate? @relation("PostFooterTemplate", fields: [footerTemplateId], references: [id], onDelete: SetNull)
   images            PostImage[]
   drafts            PostDraft[]
+  generationJobs    PostGenerationJob[]
 
   @@index([brandId])
   @@index([status])
   @@index([brandId, mode])
   @@index([headerTemplateId])
   @@index([footerTemplateId])
+}
+
+/// Async post draft generation (client-driven tick, like SourceImportJob)
+model PostGenerationJob {
+  id          String               @id @default(cuid())
+  postId      String
+  userId      String
+  kind        GenerationJobKind
+  status      GenerationJobStatus  @default(pending)
+  /// assemble | research | plan | images | draft_gpt | draft_gemini | draft | persist
+  phase       String               @default("pending")
+  requestJson Json
+  contextJson Json?
+  resultJson  Json?
+  error       String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  post        Post                 @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, status])
+  @@index([userId, status])
 }
 
 /// Candidate drafts from dual providers (GPT / Gemini). Selected draft syncs to Post.title/body.
