@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getOwnedBrand, jsonError, requireUserId } from "@/lib/api-helpers";
 import { fetchSourceFromUrl } from "@/lib/fetch-source";
+import { indexFieldsFromSourceText } from "@/lib/learned-supplement";
 import type { SourceImportItem } from "@/lib/naver-blog";
 import { getRemainingSourceSlots } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
@@ -78,16 +79,31 @@ export async function POST(_request: Request, { params }: Params) {
     try {
       const fetched = await fetchSourceFromUrl(item.url);
       const publishedAt = item.publishedAt ? new Date(item.publishedAt) : null;
+      const title = item.title || fetched.title;
       const sourcePost = await prisma.sourcePost.create({
         data: {
           brandId: id,
           rawText: fetched.text,
           sourceUrl: item.url,
-          title: item.title || fetched.title,
+          title,
           publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
           externalId: item.logNo,
         },
       });
+      const productIndex = indexFieldsFromSourceText(title, fetched.text);
+      if (productIndex.productKey) {
+        try {
+          await prisma.$executeRaw`
+            UPDATE "SourcePost"
+            SET vehicle = ${productIndex.vehicle},
+                part = ${productIndex.part},
+                "productKey" = ${productIndex.productKey}
+            WHERE id = ${sourcePost.id}
+          `;
+        } catch {
+          /* optional index */
+        }
+      }
       items[index] = {
         ...item,
         status: "fetched",

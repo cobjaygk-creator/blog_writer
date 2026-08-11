@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ImageGalleryBoard } from "@/components/ImageGalleryBoard";
 import { ImageUploadDropzone } from "@/components/ImageUploadDropzone";
 import { RichEditor } from "@/components/RichEditor";
+import { PostWorkspaceStudioView } from "@/components/studio/PostWorkspaceStudioView";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,7 @@ import {
   runGenerationJobClient,
   type ClientJob,
 } from "@/lib/run-generation-job-client";
+import { isStudioUiEnabled } from "@/lib/studio-ui";
 import { applyTemplateToBody, type TemplateKind } from "@/lib/templates";
 import {
   TOPIC_LENGTHS,
@@ -120,6 +122,8 @@ export function PostWorkspace({
   const [productHighlights, setProductHighlights] = useState(
     initialPost.productHighlights || "",
   );
+  const [useLearnedSupplement, setUseLearnedSupplement] = useState(true);
+  const [excludedSupplementPoints, setExcludedSupplementPoints] = useState<string[]>([]);
   const [draftLength, setDraftLength] = useState<TopicLength>("medium");
   const [topicImageCount, setTopicImageCount] = useState(3);
   const [topicUseAiImages, setTopicUseAiImages] = useState(false);
@@ -629,6 +633,11 @@ export function PostWorkspace({
               productHighlights: productHighlights.trim() || null,
               captionTone: captionTone || BRAND_CAPTION_TONE,
               length: draftLength,
+              useLearnedSupplement,
+              excludedSupplementPoints:
+                useLearnedSupplement && excludedSupplementPoints.length
+                  ? excludedSupplementPoints
+                  : undefined,
             },
         onPhase: (j) => {
           noteGeneratePhase(j);
@@ -673,6 +682,11 @@ export function PostWorkspace({
               length: draftLength,
               providers: [provider],
               mergeExistingDrafts: true,
+              useLearnedSupplement,
+              excludedSupplementPoints:
+                useLearnedSupplement && excludedSupplementPoints.length
+                  ? excludedSupplementPoints
+                  : undefined,
             },
         onPhase: (j) => {
           noteGeneratePhase(j);
@@ -982,6 +996,100 @@ export function PostWorkspace({
 
   const generateOpen = busy === "generate" || busy === "retry-draft";
   const generateRange = phaseProgressRange(generatePhase, generateKind);
+
+  if (isStudioUiEnabled()) {
+    return (
+      <PostWorkspaceStudioView
+        post={post}
+        keyword={keyword}
+        setKeyword={setKeyword}
+        captionTone={captionTone}
+        setCaptionTone={setCaptionTone}
+        draftLength={draftLength}
+        setDraftLength={setDraftLength}
+        topicImageCount={topicImageCount}
+        setTopicImageCount={setTopicImageCount}
+        topicUseAiImages={topicUseAiImages}
+        setTopicUseAiImages={setTopicUseAiImages}
+        topicReplaceImages={topicReplaceImages}
+        setTopicReplaceImages={setTopicReplaceImages}
+        productHighlights={productHighlights}
+        setProductHighlights={setProductHighlights}
+        useLearnedSupplement={useLearnedSupplement}
+        setUseLearnedSupplement={setUseLearnedSupplement}
+        excludedSupplementPoints={excludedSupplementPoints}
+        setExcludedSupplementPoints={setExcludedSupplementPoints}
+        toneOptions={toneOptions}
+        title={title}
+        setTitle={setTitle}
+        body={body}
+        setBody={setBody}
+        titleCandidates={titleCandidates}
+        editorTab={editorTab}
+        setEditorTab={setEditorTab}
+        editorRevision={editorRevision}
+        busy={busy}
+        error={error}
+        setError={setError}
+        statusLabel={statusLabel}
+        statusHint={statusHint}
+        bodyLocked={bodyLocked}
+        canCopy={canCopy}
+        needsSelection={needsSelection}
+        candidateDrafts={candidateDrafts}
+        selectingDraftId={selectingDraftId}
+        dualFailNotice={dualFailNotice}
+        failedProviders={failedProviders}
+        emptyCaptionCount={emptyCaptionCount}
+        emptySceneKeywordCount={emptySceneKeywordCount}
+        showNewCutCta={showNewCutCta}
+        headerTemplateId={headerTemplateId}
+        footerTemplateId={footerTemplateId}
+        setHeaderTemplateId={setHeaderTemplateId}
+        setFooterTemplateId={setFooterTemplateId}
+        headerTemplates={headerTemplates}
+        footerTemplates={footerTemplates}
+        copyMsg={copyMsg}
+        showCopyGuide={showCopyGuide}
+        publishModalOpen={publishModalOpen}
+        setPublishModalOpen={setPublishModalOpen}
+        publishUrlInput={publishUrlInput}
+        setPublishUrlInput={setPublishUrlInput}
+        publishPlatform={publishPlatform}
+        setPublishPlatform={setPublishPlatform}
+        styleMeta={styleMeta}
+        seoMeta={seoMeta}
+        generateOpen={generateOpen}
+        generatePhaseLabel={generatePhaseLabel}
+        generateRange={generateRange}
+        generateComplete={generateComplete}
+        resultRef={resultRef}
+        onGenerate={() => void generateDraft()}
+        onSave={(e) => {
+          e?.preventDefault?.();
+          void saveDraft(e || ({ preventDefault() {} } as FormEvent));
+        }}
+        onCopy={() => void copyForPublish()}
+        onSelectDraft={(id) => void selectDraft(id)}
+        onDismissCompare={dismissCompare}
+        onRetryDraft={(provider) => void retryFailedProvider(provider)}
+        onUpload={(files) => void uploadImages(files)}
+        onFillCaptions={() => void fillEmptyCaptions()}
+        onLayoutChange={saveImageLayout}
+        onRecaption={(id) => void recaption(id)}
+        onSaveCaption={(id, caption) => void saveCaption(id, caption)}
+        onRemoveImage={(id) => void removeImage(id)}
+        onAddFilesToSlot={(slotId, files, options) =>
+          void addFilesToSlot(slotId, files, options)
+        }
+        onSyncImages={() => void syncImagesIntoBody()}
+        onSaveTemplateSelection={(h, f) => void saveTemplateSelection(h, f)}
+        onApplyTemplates={() => void applySelectedTemplates()}
+        onSetStatus={(status, opts) => void setStatus(status, opts)}
+        onLearnPublish={() => void learnFromPublished()}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -22,6 +22,7 @@ import {
   getDraftProviderConfig,
   isDraftProviderConfigured,
 } from "@/lib/llm-providers";
+import { applyHeliconeBaseUrl, recordLlmTrace } from "@/lib/llm-trace";
 import { getTopicLengthPreset, type TopicLength } from "@/lib/topic-length";
 import {
   TYPE_SIZE_BODY,
@@ -78,13 +79,17 @@ export async function chatCompletion(
       }
       return { text: "", usedFallback: true, modelId: model };
     }
+    const started = Date.now();
+    const helicone = applyHeliconeBaseUrl(baseUrl);
+    const messageChars = messages.reduce((n, m) => n + (m.content?.length || 0), 0);
     const response = await fetchWithTimeout(
-      `${baseUrl}/chat/completions`,
+      `${helicone.baseUrl}/chat/completions`,
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          ...helicone.headers,
         },
         body: JSON.stringify({
           model,
@@ -98,6 +103,15 @@ export async function chatCompletion(
     );
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
+      recordLlmTrace({
+        provider: "gpt",
+        model,
+        ok: false,
+        latencyMs: Date.now() - started,
+        messageChars,
+        helicone: helicone.enabled,
+        error: `http_${response.status}`,
+      });
       throw new Error(`LLM 요청 실패 (${response.status}): ${detail.slice(0, 200)}`);
     }
     const data = (await response.json()) as {
@@ -105,19 +119,41 @@ export async function chatCompletion(
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     const text = data.choices?.[0]?.message?.content?.trim() ?? "";
-    if (!text) throw new Error("LLM 응답이 비어 있습니다.");
+    if (!text) {
+      recordLlmTrace({
+        provider: "gpt",
+        model,
+        ok: false,
+        latencyMs: Date.now() - started,
+        messageChars,
+        helicone: helicone.enabled,
+        error: "empty_response",
+      });
+      throw new Error("LLM 응답이 비어 있습니다.");
+    }
+    const tokenUsage =
+      typeof data.usage?.prompt_tokens === "number" ||
+      typeof data.usage?.completion_tokens === "number"
+        ? {
+            input: Number(data.usage?.prompt_tokens || 0),
+            output: Number(data.usage?.completion_tokens || 0),
+          }
+        : undefined;
+    recordLlmTrace({
+      provider: "gpt",
+      model,
+      ok: true,
+      latencyMs: Date.now() - started,
+      inputTokens: tokenUsage?.input,
+      outputTokens: tokenUsage?.output,
+      messageChars,
+      helicone: helicone.enabled,
+    });
     return {
       text,
       usedFallback: false,
       modelId: model,
-      tokenUsage:
-        typeof data.usage?.prompt_tokens === "number" ||
-        typeof data.usage?.completion_tokens === "number"
-          ? {
-              input: Number(data.usage?.prompt_tokens || 0),
-              output: Number(data.usage?.completion_tokens || 0),
-            }
-          : undefined,
+      tokenUsage,
     };
   }
 
@@ -381,8 +417,9 @@ function buildDraftSystem(opts: {
    - [묶음] 슬롯만 image-group 사용
    - 사용자가 묶지 않은 사진을 임의로 묶지 마세요.
 7) 장면 키워드 → 문장체 확장(최우선):
-   - 키워드를 복붙하지 말고 말투로 풀어 쓰세요. 없는 스펙은 제품 팩트/웹 리서치로만 보강.
-   - 단락마다: (짧은 도입+이모지) → 이미지 → (키워드+팩트 1문장). 빈 <p> 금지.
+   - 키워드를 복붙하지 말고 말투로 충분히 풀어 쓰세요. 없는 스펙은 제품 팩트/웹 리서치로만 보강.
+   - 단락마다: (도입 1문장+이모지) → 이미지 → (설명 2~3문장). 빈 <p> 금지.
+   - 사진 뒤 설명은 한 줄로 끝내지 마세요. 무엇을/왜 확인·작업했는지, 결과·포인트까지 구체적으로.
 8) 시공/제품 흐름: 짧은 도입 → 포인트 → 사진별 설명 → CTA. 라이프스타일 감성 소개문 금지`
     : `6) 사진이 없습니다. img 태그를 넣지 마세요. 임의 이미지 URL 금지.
 7) 텍스트 전용 구성(필수):
@@ -441,6 +478,11 @@ export async function generateBlogDraft(input: {
   postMode?: "worklog" | "product" | null;
   /** Formatted web research (blogs/news snippets) */
   webResearch?: string | null;
+  /** Same-product process/check/tip points from learned sources */
+  learnedSupplements?: Array<{
+    point: string;
+    kind: "process" | "check" | "tip" | "caution" | "other";
+  }> | null;
 }): Promise<DraftGenerateResult> {
   const draftProvider = input.draftProvider || "gpt";
   const traits = normalizeExtendedTraits(input.traitsJson);
@@ -497,6 +539,12 @@ export async function generateBlogDraft(input: {
   const webResearchBlock = input.webResearch?.trim()
     ? input.webResearch.trim()
     : "(웹 리서치 없음)";
+  const learnedBlock =
+    input.learnedSupplements?.length
+      ? input.learnedSupplements
+          .map((p, i) => `${i + 1}. [${p.kind}] ${p.point}`)
+          .join("\n")
+      : "(없음)";
   const draftSystem = buildDraftSystem({
     hasImages,
     emojiUsage: draftTraits.emojiUsage,
@@ -553,6 +601,9 @@ ${productBlock}
 웹 리서치(블로그·뉴스 스니펫 증류 — 스니펫에 없는 사실 금지. 문장 복붙 금지, 테마 말투로 재작성):
 ${webResearchBlock}
 
+학습 보충 포인트(같은 제품 과거 시공글 · 참고용. 사진 프롬프트·참고 내용 최우선 / 단락 구체화에만 사용 / 복붙·없는 스펙 금지. 키워드·장면과 모순되면 무시):
+${learnedBlock}
+
 단락별 장면 키워드(사용자 입력 우선. 사실 근거. 이와 모순되면 안 됨. 복붙 금지 → 말투로 확장):
 ${sceneKeywords}
 
@@ -563,16 +614,16 @@ ${imageLines}
 - 목표 분량: ${lengthPreset.label} — 본문 순수 텍스트 약 ${lengthPreset.targetChars.min}~${lengthPreset.targetChars.max}자 (${lengthPreset.hint}). ${lengthPreset.paragraphsPerSection}.
 - 사실 우선순위: ${
               !hasImages
-                ? "1) 제품 팩트 2) 웹 리서치 3) 유사 사례 용어·흐름 4) 편집 프로필"
+                ? "1) 제품 팩트 2) 웹 리서치 3) 학습 보충 포인트 4) 유사 사례 용어·흐름 5) 편집 프로필"
                 : isProductMode
-                  ? "1) 제품 팩트·특장점 2) 단락 장면 키워드 3) 웹 리서치/유사 사례 4) 편집 프로필"
-                  : "1) 단락 장면 키워드 2) 제품 팩트 3) 웹 리서치/유사 사례 4) 편집 프로필"
+                  ? "1) 제품 팩트·특장점 2) 단락 장면 키워드 3) 학습 보충 포인트 4) 웹 리서치/유사 사례 5) 편집 프로필"
+                  : "1) 단락 장면 키워드 2) 제품 팩트 3) 학습 보충 포인트 4) 웹 리서치/유사 사례 5) 편집 프로필"
             }
 - 모든 문장은 "${voiceTone}" 말투로 쓰세요. opener/closer·학습 스타일 강제 항목을 지키세요.
 - 장면 키워드·리서치를 복붙하지 말고 말투로 풀어 쓰세요. 없는 스펙은 팩트/리서치로만 보강.
 - 학습 용어·productMentions·CTA·commonPhrases를 자연스럽게 넣고, bannedFluff는 쓰지 마세요.
-${hasImages ? `- 단락마다: (짧은 ${isProductMode ? "제품" : "시공/제품"} 문장) → 이미지 → (키워드+팩트 1문장).\n- [단독]은 세로 1장씩, [묶음]만 가로 그리드.` : "- 사진 없이 섹션형 본문으로 정보량을 채우세요."}
-- 목표 분량을 맞추세요. 짧게는 핵심만, 길게는 과정·포인트·마무리를 더 자세히.`,
+${hasImages ? `- 단락마다: (짧은 ${isProductMode ? "제품" : "시공"} 도입 1문장) → 이미지 → (장면 키워드를 풀어쓴 설명 2~3문장. 한 문장 끝맺음 금지).\n- 설명에는 확인·작업 포인트, 상태/결과, 독자가 알면 좋은 팁 중 2가지 이상 넣으세요.\n- [단독]은 세로 1장씩, [묶음]만 가로 그리드.` : "- 사진 없이 섹션형 본문으로 정보량을 채우세요."}
+- 목표 분량을 맞추세요. 사진이 있어도 장면마다 짧게 끊지 말고 분량을 채우세요.`,
           },
         ],
         {
@@ -723,14 +774,16 @@ function fallbackDraft(
         const kw = (slot.images[0]?.caption || "사진").replace(/"/g, "");
         return `<p><span style="font-size:18px;color:${accent}">${emoji2} <strong>${kw}</strong></span></p>
 ${buildGroupedImagesHtml(slot.images, slot.images.length >= 3 ? 3 : 2)}
-<p><span style="font-size:15px">${kw} 장면을 정리했어요 ${emoji}</span></p>`;
+<p><span style="font-size:15px">${kw} 단계를 꼼꼼히 체크했어요 ${emoji}</span></p>
+<p><span style="font-size:15px">상태를 확인한 뒤 시공 가능 여부와 작업 포인트를 정리했고, 이어서 진행할 내용도 맞춰 두었습니다.</span></p>`;
       }
       return slot.images
         .map((img) => {
           const keywords = (img.caption || "사진").replace(/"/g, "");
           return `<p><span style="font-size:18px;color:${accent}">${emoji2} <strong>${keywords}</strong></span></p>
 <p>${singleImageTag(img.imageUrl, keywords)}</p>
-<p><span style="font-size:15px">${keywords} 장면을 정리했어요 ${slotIndex % 2 === 0 ? emoji : emoji2}</span></p>`;
+<p><span style="font-size:15px">${keywords} 단계를 꼼꼼히 체크했어요 ${slotIndex % 2 === 0 ? emoji : emoji2}</span></p>
+<p><span style="font-size:15px">상태를 확인한 뒤 시공 가능 여부와 작업 포인트를 정리했고, 이어서 진행할 내용도 맞춰 두었습니다.</span></p>`;
         })
         .join("\n");
     })

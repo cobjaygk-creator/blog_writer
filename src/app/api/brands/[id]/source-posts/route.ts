@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getOwnedBrand, jsonError, parseJsonBody, requireUserId } from "@/lib/api-helpers";
 import { fetchSourceFromUrl } from "@/lib/fetch-source";
+import { indexFieldsFromSourceText } from "@/lib/learned-supplement";
 import { assertCanAddSourcePost } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
 
@@ -81,6 +82,22 @@ export async function POST(request: Request, { params }: Params) {
       title: fetchedTitle,
     },
   });
+
+  // Best-effort product index (raw SQL — safe if Prisma client is stale).
+  const productIndex = indexFieldsFromSourceText(fetchedTitle, rawText);
+  if (productIndex.productKey) {
+    try {
+      await prisma.$executeRaw`
+        UPDATE "SourcePost"
+        SET vehicle = ${productIndex.vehicle},
+            part = ${productIndex.part},
+            "productKey" = ${productIndex.productKey}
+        WHERE id = ${sourcePost.id}
+      `;
+    } catch {
+      /* optional index */
+    }
+  }
 
   return NextResponse.json(
     {

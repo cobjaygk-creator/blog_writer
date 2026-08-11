@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { PostWorkspace } from "@/components/PostWorkspace";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isStudioUiEnabled } from "@/lib/studio-ui";
 import { normalizeTraitsJson } from "@/lib/style-traits";
 
 type Props = { params: Promise<{ id: string }> };
@@ -37,6 +38,51 @@ export default async function PostDetailPage({ params }: Props) {
     ? normalizeTraitsJson(post.brand.styleProfile.traitsJson).tone
     : null;
 
+  const workspace = (
+    <Suspense fallback={<p className="text-sm text-[color:var(--muted)]">편집기 준비 중…</p>}>
+      <PostWorkspace
+        initialPost={{
+          id: post.id,
+          brandId: post.brandId,
+          mode: post.mode,
+          title: post.title,
+          titleCandidates: post.titleCandidates,
+          body: post.body,
+          keyword: post.keyword,
+          productHighlights: post.productHighlights,
+          captionTone: post.captionTone,
+          status: post.status,
+          headerTemplateId: post.headerTemplateId,
+          footerTemplateId: post.footerTemplateId,
+          images: post.images.map((img) => ({
+            id: img.id,
+            imageUrl: img.imageUrl,
+            caption: img.caption,
+            orderIndex: img.orderIndex,
+            groupId: img.groupId,
+          })),
+          brand: { id: post.brand.id, name: post.brand.name },
+          drafts: post.drafts.map((d, i) => ({
+            id: d.id,
+            provider: d.provider,
+            modelId: d.modelId,
+            title: d.title,
+            titleCandidates: d.titleCandidates,
+            body: d.body,
+            isSelected: d.isSelected,
+            label: i === 0 ? "버전 A" : "버전 B",
+          })),
+        }}
+        templates={post.brand.templates}
+        brandTone={brandTone}
+      />
+    </Suspense>
+  );
+
+  if (isStudioUiEnabled()) {
+    return <main className="h-full min-h-0">{workspace}</main>;
+  }
+
   return (
     <main className="mx-auto w-full max-w-7xl px-6 py-10">
       <div className="flex flex-wrap gap-3 text-sm text-[color:var(--muted)]">
@@ -53,46 +99,7 @@ export default async function PostDetailPage({ params }: Props) {
           템플릿
         </Link>
       </div>
-      <div className="mt-6">
-        <Suspense fallback={<p className="text-sm text-[color:var(--muted)]">편집기 준비 중…</p>}>
-          <PostWorkspace
-            initialPost={{
-              id: post.id,
-              brandId: post.brandId,
-              mode: post.mode,
-              title: post.title,
-              titleCandidates: post.titleCandidates,
-              body: post.body,
-              keyword: post.keyword,
-              productHighlights: post.productHighlights,
-              captionTone: post.captionTone,
-              status: post.status,
-              headerTemplateId: post.headerTemplateId,
-              footerTemplateId: post.footerTemplateId,
-              images: post.images.map((img) => ({
-                id: img.id,
-                imageUrl: img.imageUrl,
-                caption: img.caption,
-                orderIndex: img.orderIndex,
-                groupId: img.groupId,
-              })),
-              brand: { id: post.brand.id, name: post.brand.name },
-              drafts: post.drafts.map((d, i) => ({
-                id: d.id,
-                provider: d.provider,
-                modelId: d.modelId,
-                title: d.title,
-                titleCandidates: d.titleCandidates,
-                body: d.body,
-                isSelected: d.isSelected,
-                label: i === 0 ? "버전 A" : "버전 B",
-              })),
-            }}
-            templates={post.brand.templates}
-            brandTone={brandTone}
-          />
-        </Suspense>
-      </div>
+      <div className="mt-6">{workspace}</div>
     </main>
   );
 }

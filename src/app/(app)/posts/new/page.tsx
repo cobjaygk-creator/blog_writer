@@ -1,8 +1,10 @@
 import Link from "next/link";
 
 import { PostWizard } from "@/components/PostWizard";
+import { StudioQuickCreate } from "@/components/studio/StudioQuickCreate";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isStudioUiEnabled } from "@/lib/studio-ui";
 import { normalizeTraitsJson } from "@/lib/style-traits";
 
 type Props = { searchParams: Promise<{ brandId?: string }> };
@@ -20,6 +22,23 @@ export default async function NewPostPage({ searchParams }: Props) {
     },
   });
 
+  const brandOptions = brands.map((brand) => ({
+    id: brand.id,
+    name: brand.name,
+    learned: Boolean(brand.styleProfile),
+    brandTone: brand.styleProfile
+      ? normalizeTraitsJson(brand.styleProfile.traitsJson).tone
+      : null,
+  }));
+
+  if (isStudioUiEnabled()) {
+    return (
+      <main>
+        <StudioQuickCreate brands={brandOptions} initialBrandId={brandId || null} />
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto w-full max-w-2xl px-6 py-10">
       <Link
@@ -35,17 +54,7 @@ export default async function NewPostPage({ searchParams }: Props) {
         입력만 마치면 편집기로 넘어가 초안 생성·비교·문체 보정이 이어집니다.
       </p>
       <div className="mt-8">
-        <PostWizard
-          initialBrandId={brandId || null}
-          brands={brands.map((brand) => ({
-            id: brand.id,
-            name: brand.name,
-            learned: Boolean(brand.styleProfile),
-            brandTone: brand.styleProfile
-              ? normalizeTraitsJson(brand.styleProfile.traitsJson).tone
-              : null,
-          }))}
-        />
+        <PostWizard initialBrandId={brandId || null} brands={brandOptions} />
       </div>
     </main>
   );

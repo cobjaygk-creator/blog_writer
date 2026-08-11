@@ -1,8 +1,9 @@
 import { ensureTypographyRhythm } from "@/lib/typography-rhythm";
 
-/** Unified inline styles so editor + Naver paste look consistent. */
+/** Unified inline styles so editor + Naver paste look consistent.
+ *  Full frame (no crop) — contain scales within width / soft max-height. */
 export const SINGLE_IMAGE_STYLE =
-  "display:block;width:100%;max-width:100%;max-height:380px;object-fit:cover;object-position:center;border-radius:8px;";
+  "display:block;width:100%;max-width:100%;height:auto;max-height:720px;object-fit:contain;object-position:center;border-radius:8px;";
 
 export const GROUP_IMAGE_STYLE =
   "display:block;width:100%;height:180px;object-fit:cover;object-position:center;border-radius:6px;";
@@ -94,7 +95,7 @@ function extractDivBlocks(
   return { html: result, placeholders };
 }
 
-/** Rewrite img styles: template → natural, group → tile, others → crop. */
+/** Rewrite img styles: template → natural, group → tile, others → single (uncropped). */
 export function normalizeBodyImageStyles(html: string) {
   if (!html) return html;
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getOwnedPost, jsonError, requireUserId } from "@/lib/api-helpers";
 import { fetchSourceFromUrl } from "@/lib/fetch-source";
+import { indexFieldsFromSourceText } from "@/lib/learned-supplement";
 import { assertCanAddSourcePost } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
 import { runStyleLearnForBrand } from "@/lib/style-learn";
@@ -80,6 +81,20 @@ export async function POST(_request: Request, { params }: Params) {
       },
     });
     sourcePostId = created.id;
+    const productIndex = indexFieldsFromSourceText(fetchedTitle, rawText);
+    if (productIndex.productKey) {
+      try {
+        await prisma.$executeRaw`
+          UPDATE "SourcePost"
+          SET vehicle = ${productIndex.vehicle},
+              part = ${productIndex.part},
+              "productKey" = ${productIndex.productKey}
+          WHERE id = ${created.id}
+        `;
+      } catch {
+        /* optional index */
+      }
+    }
   }
 
   try {

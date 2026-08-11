@@ -1,8 +1,46 @@
 import { extractCorpusSignals } from "@/lib/corpus-signals";
+import { indexFieldsFromSourceText } from "@/lib/learned-supplement";
 import { learnStyleFromSources } from "@/lib/llm";
 import { STYLE_LEARN_MIN_CHARS, STYLE_LEARN_SAMPLE_SIZE } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 import { normalizeExtendedTraits } from "@/lib/style-traits";
+
+/**
+ * Backfill productKey/vehicle/part for sources missing an index.
+ * Uses raw SQL so it still works when the Prisma client lags behind the schema
+ * (common on Windows while `next dev` locks query_engine DLL).
+ */
+export async function backfillSourceProductKeys(brandId: string, limit = 100) {
+  try {
+    const rows = await prisma.$queryRaw<
+      Array<{ id: string; title: string | null; rawText: string }>
+    >`
+      SELECT id, title, "rawText"
+      FROM "SourcePost"
+      WHERE "brandId" = ${brandId}
+        AND "productKey" IS NULL
+      ORDER BY "publishedAt" DESC NULLS LAST, "createdAt" DESC
+      LIMIT ${limit}
+    `;
+    let updated = 0;
+    for (const row of rows) {
+      const fields = indexFieldsFromSourceText(row.title, row.rawText);
+      if (!fields.productKey) continue;
+      await prisma.$executeRaw`
+        UPDATE "SourcePost"
+        SET vehicle = ${fields.vehicle},
+            part = ${fields.part},
+            "productKey" = ${fields.productKey}
+        WHERE id = ${row.id}
+      `;
+      updated += 1;
+    }
+    return updated;
+  } catch {
+    // Columns missing or DB unreachable — skip; A-stage text match still works.
+    return 0;
+  }
+}
 
 function isNoisySource(text: string) {
   const markers = ["블로그 주소 변경 불가", "이웃을 맺으면", "퀵에디터", "이 블로그에서 검색"];
@@ -10,6 +48,8 @@ function isNoisySource(text: string) {
 }
 
 export async function runStyleLearnForBrand(brandId: string) {
+  await backfillSourceProductKeys(brandId, 100);
+
   const sourcePosts = await prisma.sourcePost.findMany({
     where: { brandId },
     orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],

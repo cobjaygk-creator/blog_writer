@@ -1,7 +1,9 @@
 import { getUnsplashAccessKey } from "@/lib/integration-config";
 import { fetchWithTimeout } from "@/lib/integrations";
-import { uploadImageBuffer } from "@/lib/storage";
 import { generateAndStoreImage, type GeneratedImage } from "@/lib/image-gen";
+import { logWarn } from "@/lib/observability";
+import { uploadImageBuffer } from "@/lib/storage";
+import { recordApiUsage } from "@/lib/usage-meter";
 
 export type StockImageResult = {
   imageUrl: string;
@@ -63,10 +65,22 @@ export async function fetchUnsplashSceneImage(input: {
     },
     20_000,
   );
+  noteUnsplashRateHeaders(res.headers);
+
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
+    if (res.status === 403 || /rate limit/i.test(detail)) {
+      await recordApiUsage("unsplash", { success: false }).catch(() => undefined);
+      logWarn("unsplash", "rate limit or forbidden", {
+        status: String(res.status),
+        remaining: res.headers.get("x-ratelimit-remaining") || "",
+        limit: res.headers.get("x-ratelimit-limit") || "",
+      });
+    }
     throw new Error(`Unsplash 검색 실패 (${res.status}): ${detail.slice(0, 160)}`);
   }
+
+  await recordApiUsage("unsplash", { success: true, inputUnits: 1 }).catch(() => undefined);
 
   const data = (await res.json()) as {
     results?: Array<{
@@ -170,12 +184,32 @@ export async function fetchSceneImagesForTopic(input: {
       });
       errors[i] = null;
     } catch (e) {
-      if (isUnsplashRateLimitError(e)) rateLimited = true;
+      if (isUnsplashRateLimitError(e)) {
+        rateLimited = true;
+        logWarn("unsplash", "rate limited during scene fetch — switching to news fallback", {
+          queryIndex: i,
+          query: q.slice(0, 80),
+        });
+      }
       errors[i] = e instanceof Error ? e.message : "이미지 가져오기 실패";
       results[i] = null;
     }
   }
   return { results, errors, rateLimited };
+}
+
+function noteUnsplashRateHeaders(headers: Headers) {
+  const remaining = headers.get("x-ratelimit-remaining");
+  const limit = headers.get("x-ratelimit-limit");
+  if (remaining == null) return;
+  const left = Number(remaining);
+  if (!Number.isFinite(left)) return;
+  if (left <= 5) {
+    logWarn("unsplash", "rate limit nearly exhausted", {
+      remaining: left,
+      limit: limit || "",
+    });
+  }
 }
 
 async function trackUnsplashDownload(accessKey: string, photoId: string) {

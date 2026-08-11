@@ -169,12 +169,19 @@ model SourcePost {
   publishedAt DateTime?
   /// External post id (e.g. Naver logNo)
   externalId  String?
+  /// Indexed product facets for learned-content supplement (e.g. "카니발 KA4")
+  vehicle     String?
+  /// e.g. "바디킷", "머플러팁"
+  part        String?
+  /// Normalized key: slug(vehicle)|slug(part)
+  productKey  String?
   createdAt   DateTime  @default(now())
   brand       Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([brandId])
   @@index([brandId, sourceUrl])
   @@index([brandId, externalId])
+  @@index([brandId, productKey])
 }
 
 model SourceImportJob {

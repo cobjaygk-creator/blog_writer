@@ -12,6 +12,11 @@
 
 # testing
 /coverage
+/playwright-report
+/test-results
+
+# local LLM traces
+/.data/
 
 # next.js
 /.next/

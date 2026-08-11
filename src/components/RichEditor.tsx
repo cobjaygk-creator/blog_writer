@@ -2,11 +2,17 @@
 
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
+import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
+import Subscript from "@tiptap/extension-subscript";
+import Superscript from "@tiptap/extension-superscript";
 import { TableKit } from "@tiptap/extension-table";
+import TaskItem from "@tiptap/extension-task-item";
+import TaskList from "@tiptap/extension-task-list";
 import TextAlign from "@tiptap/extension-text-align";
 import { Color, FontSize, TextStyle } from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
+import Youtube from "@tiptap/extension-youtube";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
@@ -15,17 +21,29 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
+  Code,
+  CodeSquare,
+  Eraser,
   Heading2,
   Highlighter,
   ImagePlus,
   Italic,
+  Link2,
   List,
   ListOrdered,
+  ListTodo,
+  Minus,
+  Quote,
   Redo2,
+  RemoveFormatting,
   Strikethrough,
+  Subscript as SubscriptIcon,
+  Superscript as SuperscriptIcon,
   Table,
+  TableCellsMerge,
   Underline as UnderlineIcon,
   Undo2,
+  Video,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -41,12 +59,14 @@ import { cn } from "@/lib/utils";
 
 import "prosemirror-view/style/prosemirror.css";
 
-const COLORS = ["#222222", "#5E56F0", "#E85D04", "#C2255C", "#0B7285", "#2F9E44", "#F08C00"];
-const HIGHLIGHTS = ["#FEF08A", "#BBF7D0", "#BAE6FD", "#FBCFE8", "#E9D5FF"];
+const COLORS = ["#222222", "#5E56F0", "#E85D04", "#C2255C", "#0B7285", "#2F9E44", "#F08C00", "#868E96"];
+const HIGHLIGHTS = ["#FEF08A", "#BBF7D0", "#BAE6FD", "#FBCFE8", "#E9D5FF", "#FECACA"];
 const SIZES = [
+  { label: "작게", value: "13px" },
   { label: "본문", value: "15px" },
   { label: "강조", value: "18px" },
   { label: "큰글", value: "22px" },
+  { label: "특대", value: "28px" },
 ];
 
 type Props = {
@@ -59,6 +79,10 @@ type Props = {
   accentColors?: string[];
   /** `natural` keeps full image height (templates). Default crops post photos. */
   imageMode?: "crop" | "natural";
+  /** Renders above the toolbar inside the sticky chrome (e.g. edit/preview tabs). */
+  headerSlot?: ReactNode;
+  /** Stick toolbar to the top of the nearest scroll parent (default true). */
+  stickyToolbar?: boolean;
 };
 
 export function RichEditor({
@@ -69,8 +93,10 @@ export function RichEditor({
   revision = 0,
   accentColors,
   imageMode = "crop",
+  headerSlot,
+  stickyToolbar = true,
 }: Props) {
-  const palette = [...new Set([...(accentColors || []), ...COLORS])].slice(0, 10);
+  const palette = [...new Set([...(accentColors || []), ...COLORS])].slice(0, 12);
   const prepare = imageMode === "natural" ? prepareTemplateHtml : prepareEditorHtml;
   const imageStyle = imageMode === "natural" ? NATURAL_IMAGE_STYLE : SINGLE_IMAGE_STYLE;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +106,14 @@ export function RichEditor({
   const [headingOpen, setHeadingOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
+  const [tableOpen, setTableOpen] = useState(false);
+
+  function closeMenus() {
+    setHeadingOpen(false);
+    setListOpen(false);
+    setColorOpen(false);
+    setTableOpen(false);
+  }
 
   async function insertImageFiles(files: File[]) {
     const ed = editorRef.current;
@@ -91,22 +125,58 @@ export function RichEditor({
     }
   }
 
+  function setLink() {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const prev = ed.getAttributes("link").href as string | undefined;
+    const url = window.prompt("링크 URL", prev || "https://");
+    if (url === null) return;
+    if (url.trim() === "") {
+      ed.chain().focus().extendMarkRange("link").unsetLink().run();
+      return;
+    }
+    ed.chain().focus().extendMarkRange("link").setLink({ href: url.trim() }).run();
+  }
+
+  function insertYoutube() {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const url = window.prompt("YouTube URL", "https://www.youtube.com/watch?v=");
+    if (!url?.trim()) return;
+    ed.chain().focus().setYoutubeVideo({ src: url.trim() }).run();
+  }
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
+        heading: { levels: [1, 2, 3, 4] },
+        link: false,
       }),
       TextStyle,
       Color,
       FontSize,
       Underline,
+      Subscript,
+      Superscript,
       Highlight.configure({ multicolor: true }),
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+        linkOnPaste: true,
+        HTMLAttributes: {
+          class: "text-[var(--accent)] underline underline-offset-2",
+          rel: "noopener noreferrer",
+          target: "_blank",
+        },
+      }),
       TextAlign.configure({
         types: ["heading", "paragraph"],
       }),
+      TaskList,
+      TaskItem.configure({ nested: true }),
       TableKit.configure({
-        table: { resizable: false },
+        table: { resizable: true },
       }),
       Image.configure({
         inline: false,
@@ -114,6 +184,12 @@ export function RichEditor({
         HTMLAttributes: {
           style: imageStyle,
         },
+      }),
+      Youtube.configure({
+        controls: true,
+        nocookie: true,
+        width: 640,
+        height: 360,
       }),
       ImageGroup,
       TemplateBlock,
@@ -123,7 +199,7 @@ export function RichEditor({
     editorProps: {
       attributes: {
         class: cn(
-          "rich-doc min-h-[28rem] px-4 py-3 focus:outline-none",
+          "rich-doc min-h-[32rem] px-5 py-4 focus:outline-none md:px-6",
           imageMode === "natural" && "rich-doc--natural-images",
         ),
       },
@@ -165,15 +241,26 @@ export function RichEditor({
 
   if (!editor) {
     return (
-      <div className="min-h-[28rem] rounded-lg border border-[var(--border)] bg-white px-4 py-3 text-sm text-[color:var(--muted)]">
+      <div className="min-h-[32rem] rounded-lg border border-[var(--border)] bg-white px-4 py-3 text-sm text-[color:var(--muted)]">
         에디터 로딩…
       </div>
     );
   }
 
+  const inTable = editor.isActive("table");
+
   return (
-    <div className={cn("overflow-hidden rounded-lg border border-[var(--border)] bg-white", className)}>
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] px-2 py-1.5">
+    <div className={cn("rounded-lg border border-[var(--border)] bg-white", className)}>
+      <div
+        className={cn(
+          "z-20 border-b border-[var(--border)] bg-white",
+          stickyToolbar && "sticky top-0 shadow-sm",
+        )}
+      >
+        {headerSlot ? (
+          <div className="border-b border-[var(--border)] px-3 py-2">{headerSlot}</div>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5">
         <IconBtn
           title="실행 취소"
           onClick={() => editor.chain().focus().undo().run()}
@@ -199,40 +286,34 @@ export function RichEditor({
               setHeadingOpen((v) => !v);
               setListOpen(false);
               setColorOpen(false);
+              setTableOpen(false);
             }}
           >
             <Heading2 className="h-4 w-4" />
           </IconBtn>
           {headingOpen ? (
-            <Dropdown onClose={() => setHeadingOpen(false)}>
+            <Dropdown onClose={closeMenus}>
               <DropItem
                 label="본문"
                 onClick={() => {
                   editor.chain().focus().setParagraph().run();
-                  setHeadingOpen(false);
+                  closeMenus();
                 }}
               />
-              <DropItem
-                label="제목 1"
-                onClick={() => {
-                  editor.chain().focus().toggleHeading({ level: 1 }).run();
-                  setHeadingOpen(false);
-                }}
-              />
-              <DropItem
-                label="제목 2"
-                onClick={() => {
-                  editor.chain().focus().toggleHeading({ level: 2 }).run();
-                  setHeadingOpen(false);
-                }}
-              />
-              <DropItem
-                label="제목 3"
-                onClick={() => {
-                  editor.chain().focus().toggleHeading({ level: 3 }).run();
-                  setHeadingOpen(false);
-                }}
-              />
+              {[1, 2, 3, 4].map((level) => (
+                <DropItem
+                  key={level}
+                  label={`제목 ${level}`}
+                  onClick={() => {
+                    editor
+                      .chain()
+                      .focus()
+                      .toggleHeading({ level: level as 1 | 2 | 3 | 4 })
+                      .run();
+                    closeMenus();
+                  }}
+                />
+              ))}
             </Dropdown>
           ) : null}
         </div>
@@ -240,23 +321,28 @@ export function RichEditor({
         <div className="relative">
           <IconBtn
             title="목록"
-            active={editor.isActive("bulletList") || editor.isActive("orderedList")}
+            active={
+              editor.isActive("bulletList") ||
+              editor.isActive("orderedList") ||
+              editor.isActive("taskList")
+            }
             onClick={() => {
               setListOpen((v) => !v);
               setHeadingOpen(false);
               setColorOpen(false);
+              setTableOpen(false);
             }}
           >
             <List className="h-4 w-4" />
           </IconBtn>
           {listOpen ? (
-            <Dropdown onClose={() => setListOpen(false)}>
+            <Dropdown onClose={closeMenus}>
               <DropItem
                 label="글머리 기호"
                 icon={<List className="h-3.5 w-3.5" />}
                 onClick={() => {
                   editor.chain().focus().toggleBulletList().run();
-                  setListOpen(false);
+                  closeMenus();
                 }}
               />
               <DropItem
@@ -264,12 +350,34 @@ export function RichEditor({
                 icon={<ListOrdered className="h-3.5 w-3.5" />}
                 onClick={() => {
                   editor.chain().focus().toggleOrderedList().run();
-                  setListOpen(false);
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="체크리스트"
+                icon={<ListTodo className="h-3.5 w-3.5" />}
+                onClick={() => {
+                  editor.chain().focus().toggleTaskList().run();
+                  closeMenus();
                 }}
               />
             </Dropdown>
           ) : null}
         </div>
+
+        <IconBtn
+          title="인용"
+          active={editor.isActive("blockquote")}
+          onClick={() => editor.chain().focus().toggleBlockquote().run()}
+        >
+          <Quote className="h-4 w-4" />
+        </IconBtn>
+        <IconBtn
+          title="구분선"
+          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+        >
+          <Minus className="h-4 w-4" />
+        </IconBtn>
 
         <Sep />
 
@@ -288,6 +396,13 @@ export function RichEditor({
           <Italic className="h-4 w-4" />
         </IconBtn>
         <IconBtn
+          title="밑줄"
+          active={editor.isActive("underline")}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+        >
+          <UnderlineIcon className="h-4 w-4" />
+        </IconBtn>
+        <IconBtn
           title="취소선"
           active={editor.isActive("strike")}
           onClick={() => editor.chain().focus().toggleStrike().run()}
@@ -295,27 +410,49 @@ export function RichEditor({
           <Strikethrough className="h-4 w-4" />
         </IconBtn>
         <IconBtn
-          title="밑줄"
-          active={editor.isActive("underline")}
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          title="인라인 코드"
+          active={editor.isActive("code")}
+          onClick={() => editor.chain().focus().toggleCode().run()}
         >
-          <UnderlineIcon className="h-4 w-4" />
+          <Code className="h-4 w-4" />
+        </IconBtn>
+        <IconBtn
+          title="코드 블록"
+          active={editor.isActive("codeBlock")}
+          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+        >
+          <CodeSquare className="h-4 w-4" />
+        </IconBtn>
+        <IconBtn
+          title="위 첨자"
+          active={editor.isActive("superscript")}
+          onClick={() => editor.chain().focus().toggleSuperscript().run()}
+        >
+          <SuperscriptIcon className="h-4 w-4" />
+        </IconBtn>
+        <IconBtn
+          title="아래 첨자"
+          active={editor.isActive("subscript")}
+          onClick={() => editor.chain().focus().toggleSubscript().run()}
+        >
+          <SubscriptIcon className="h-4 w-4" />
         </IconBtn>
 
         <div className="relative">
           <IconBtn
-            title="글자색 / 형광펜"
+            title="글자색 / 형광펜 / 크기"
             active={Boolean(editor.getAttributes("textStyle").color) || editor.isActive("highlight")}
             onClick={() => {
               setColorOpen((v) => !v);
               setHeadingOpen(false);
               setListOpen(false);
+              setTableOpen(false);
             }}
           >
             <Highlighter className="h-4 w-4" />
           </IconBtn>
           {colorOpen ? (
-            <Dropdown onClose={() => setColorOpen(false)} className="w-52 p-2">
+            <Dropdown onClose={closeMenus} className="w-56 p-2">
               <p className="mb-1.5 text-[11px] font-medium text-[color:var(--muted)]">글자색</p>
               <div className="mb-2 flex flex-wrap gap-1.5">
                 {palette.map((color) => (
@@ -327,7 +464,7 @@ export function RichEditor({
                     style={{ backgroundColor: color }}
                     onClick={() => {
                       editor.chain().focus().setColor(color).run();
-                      setColorOpen(false);
+                      closeMenus();
                     }}
                   />
                 ))}
@@ -336,14 +473,14 @@ export function RichEditor({
                   className="h-6 rounded-md border border-[var(--border)] px-1.5 text-[10px] text-[color:var(--muted)]"
                   onClick={() => {
                     editor.chain().focus().unsetColor().run();
-                    setColorOpen(false);
+                    closeMenus();
                   }}
                 >
                   해제
                 </button>
               </div>
               <p className="mb-1.5 text-[11px] font-medium text-[color:var(--muted)]">형광펜</p>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="mb-2 flex flex-wrap gap-1.5">
                 {HIGHLIGHTS.map((color) => (
                   <button
                     key={color}
@@ -353,7 +490,7 @@ export function RichEditor({
                     style={{ backgroundColor: color }}
                     onClick={() => {
                       editor.chain().focus().toggleHighlight({ color }).run();
-                      setColorOpen(false);
+                      closeMenus();
                     }}
                   />
                 ))}
@@ -362,13 +499,14 @@ export function RichEditor({
                   className="h-6 rounded-md border border-[var(--border)] px-1.5 text-[10px] text-[color:var(--muted)]"
                   onClick={() => {
                     editor.chain().focus().unsetHighlight().run();
-                    setColorOpen(false);
+                    closeMenus();
                   }}
                 >
                   해제
                 </button>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1 border-t border-[var(--border)] pt-2">
+              <p className="mb-1.5 text-[11px] font-medium text-[color:var(--muted)]">글자 크기</p>
+              <div className="flex flex-wrap gap-1">
                 {SIZES.map((size) => (
                   <button
                     key={size.value}
@@ -381,12 +519,22 @@ export function RichEditor({
                     )}
                     onClick={() => {
                       editor.chain().focus().setFontSize(size.value).run();
-                      setColorOpen(false);
+                      closeMenus();
                     }}
                   >
                     {size.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 text-[11px] text-[color:var(--muted)]"
+                  onClick={() => {
+                    editor.chain().focus().unsetFontSize().run();
+                    closeMenus();
+                  }}
+                >
+                  기본
+                </button>
               </div>
             </Dropdown>
           ) : null}
@@ -425,18 +573,126 @@ export function RichEditor({
 
         <Sep />
 
+        <IconBtn title="링크" active={editor.isActive("link")} onClick={setLink}>
+          <Link2 className="h-4 w-4" />
+        </IconBtn>
         <IconBtn
-          title="표 삽입"
-          active={editor.isActive("table")}
-          onClick={() =>
-            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-          }
+          title="링크 제거"
+          disabled={!editor.isActive("link")}
+          onClick={() => editor.chain().focus().unsetLink().run()}
         >
-          <Table className="h-4 w-4" />
+          <Eraser className="h-4 w-4" />
         </IconBtn>
         <IconBtn title="이미지 추가" onClick={() => fileInputRef.current?.click()}>
           <ImagePlus className="h-4 w-4" />
         </IconBtn>
+        <IconBtn title="YouTube" onClick={insertYoutube}>
+          <Video className="h-4 w-4" />
+        </IconBtn>
+
+        <div className="relative">
+          <IconBtn
+            title="표"
+            active={inTable}
+            onClick={() => {
+              setTableOpen((v) => !v);
+              setHeadingOpen(false);
+              setListOpen(false);
+              setColorOpen(false);
+            }}
+          >
+            <Table className="h-4 w-4" />
+          </IconBtn>
+          {tableOpen ? (
+            <Dropdown onClose={closeMenus} className="w-44">
+              <DropItem
+                label="표 삽입 (3×3)"
+                icon={<Table className="h-3.5 w-3.5" />}
+                onClick={() => {
+                  editor
+                    .chain()
+                    .focus()
+                    .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                    .run();
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="행 위에 추가"
+                onClick={() => {
+                  editor.chain().focus().addRowBefore().run();
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="행 아래에 추가"
+                onClick={() => {
+                  editor.chain().focus().addRowAfter().run();
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="열 왼쪽에 추가"
+                onClick={() => {
+                  editor.chain().focus().addColumnBefore().run();
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="열 오른쪽에 추가"
+                onClick={() => {
+                  editor.chain().focus().addColumnAfter().run();
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="행 삭제"
+                onClick={() => {
+                  editor.chain().focus().deleteRow().run();
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="열 삭제"
+                onClick={() => {
+                  editor.chain().focus().deleteColumn().run();
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="셀 병합/분할"
+                icon={<TableCellsMerge className="h-3.5 w-3.5" />}
+                onClick={() => {
+                  if (editor.can().mergeCells()) {
+                    editor.chain().focus().mergeCells().run();
+                  } else {
+                    editor.chain().focus().splitCell().run();
+                  }
+                  closeMenus();
+                }}
+              />
+              <DropItem
+                label="표 삭제"
+                onClick={() => {
+                  editor.chain().focus().deleteTable().run();
+                  closeMenus();
+                }}
+              />
+            </Dropdown>
+          ) : null}
+        </div>
+
+        <Sep />
+
+        <IconBtn
+          title="서식 지우기"
+          onClick={() =>
+            editor.chain().focus().unsetAllMarks().clearNodes().setParagraph().run()
+          }
+        >
+          <RemoveFormatting className="h-4 w-4" />
+        </IconBtn>
+
         <input
           ref={fileInputRef}
           type="file"
@@ -449,6 +705,7 @@ export function RichEditor({
             e.target.value = "";
           }}
         />
+        </div>
       </div>
       <EditorContent editor={editor} />
     </div>
@@ -519,7 +776,7 @@ function Dropdown({
     <div
       data-editor-dropdown
       className={cn(
-        "absolute left-0 top-full z-30 mt-1 min-w-[9rem] rounded-lg border border-[var(--border)] bg-white py-1 shadow-lg",
+        "absolute left-0 top-full z-40 mt-1 max-h-[min(24rem,70vh)] min-w-[9rem] overflow-y-auto rounded-lg border border-[var(--border)] bg-white py-1 shadow-lg",
         className,
       )}
     >

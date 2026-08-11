@@ -11,6 +11,7 @@ import {
 } from "@/lib/dual-draft";
 import { imagesToSlots } from "@/lib/image-slots";
 import { uploadMaxImagesPerPost } from "@/lib/integrations";
+import { collectLearnedSupplements } from "@/lib/learned-supplement";
 import { providerDisplayLabel } from "@/lib/llm-providers";
 import { fetchNewsImagesForTopic } from "@/lib/news-images";
 import { jobLog } from "@/lib/observability";
@@ -61,6 +62,10 @@ export type GenerateRequest = {
   providers?: DraftProvider[];
   /** Keep other PostDraft rows when regenerating a subset. */
   mergeExistingDrafts?: boolean;
+  /** RAG-lite: inject same-product points from learned sources (default on). */
+  useLearnedSupplement?: boolean;
+  /** Points the user unchecked in the preview UI. */
+  excludedSupplementPoints?: string[];
 };
 
 export type GenerateTopicRequest = {
@@ -645,6 +650,47 @@ async function assembleGenerateContext(
 
   const postMode =
     post.mode === "product" || post.mode === "worklog" ? post.mode : "worklog";
+
+  let learnedSupplements: SharedDraftInput["learnedSupplements"] = null;
+  const useLearned =
+    req.useLearnedSupplement !== false &&
+    (postMode === "worklog" || postMode === "product") &&
+    images.length > 0;
+  if (useLearned) {
+    try {
+      const excluded = new Set(
+        (req.excludedSupplementPoints || [])
+          .map((p) => p.trim())
+          .filter(Boolean),
+      );
+      const points = await collectLearnedSupplements({
+        sources: sourceCorpus,
+        keyword,
+        notes: productHighlights,
+        imagePrompts: images.map((img) => img.caption || ""),
+        productName: productFacts.productName,
+        enabled: true,
+      });
+      learnedSupplements = points
+        .filter((p) => !excluded.has(p.point))
+        .map((p) => ({ point: p.point, kind: p.kind }));
+      if (learnedSupplements.length) {
+        jobLog.phase({
+          postId,
+          phase: "assemble",
+          learnedSupplementCount: learnedSupplements.length,
+        });
+      }
+    } catch (e) {
+      jobLog.warn("learned supplement failed", {
+        postId,
+        phase: "assemble",
+        error: e instanceof Error ? e.message : String(e),
+      });
+      learnedSupplements = null;
+    }
+  }
+
   const { limits, unlimited } = await getUserPlan(userId);
   const dualEnabled = unlimited || limits.dualGenerationEnabled;
 
@@ -662,6 +708,7 @@ async function assembleGenerateContext(
     length,
     postMode,
     webResearch,
+    learnedSupplements,
   };
 
   return {

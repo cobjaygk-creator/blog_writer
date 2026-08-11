@@ -22,6 +22,8 @@ const createSchema = z.discriminatedUnion("kind", [
     length: z.enum(TOPIC_LENGTHS).optional(),
     providers: providersSchema,
     mergeExistingDrafts: z.boolean().optional(),
+    useLearnedSupplement: z.boolean().optional(),
+    excludedSupplementPoints: z.array(z.string().trim().min(1).max(120)).max(12).optional(),
   }),
   z.object({
     kind: z.literal("generate_topic"),
@@ -67,6 +69,8 @@ export async function POST(request: Request, { params }: Params) {
       length: parsed.data.length,
       providers: parsed.data.providers,
       mergeExistingDrafts: parsed.data.mergeExistingDrafts,
+      useLearnedSupplement: parsed.data.useLearnedSupplement,
+      excludedSupplementPoints: parsed.data.excludedSupplementPoints,
     };
   } else {
     requestPayload = {

@@ -5,6 +5,7 @@ import {
   llmTimeoutMs,
 } from "@/lib/integrations";
 import { getLlmGeminiRuntime, getLlmGptRuntime } from "@/lib/integration-config";
+import { applyHeliconeBaseUrl, recordLlmTrace } from "@/lib/llm-trace";
 import { recordApiUsage } from "@/lib/usage-meter";
 
 export type DraftProvider = "gpt" | "gemini";
@@ -92,14 +93,19 @@ export async function chatCompletionWithProvider(
     return { text: "", usedFallback: true, modelId: config.model };
   }
 
+  const started = Date.now();
+  const helicone = applyHeliconeBaseUrl(config.baseUrl);
+  const messageChars = messages.reduce((n, m) => n + (m.content?.length || 0), 0);
+
   try {
     const response = await fetchWithTimeout(
-      `${config.baseUrl}/chat/completions`,
+      `${helicone.baseUrl}/chat/completions`,
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${config.apiKey}`,
           "Content-Type": "application/json",
+          ...helicone.headers,
         },
         body: JSON.stringify({
           model: config.model,
@@ -114,6 +120,15 @@ export async function chatCompletionWithProvider(
 
     if (!response.ok) {
       await recordApiUsage(slot, { success: false }).catch(() => undefined);
+      recordLlmTrace({
+        provider,
+        model: config.model,
+        ok: false,
+        latencyMs: Date.now() - started,
+        messageChars,
+        helicone: helicone.enabled,
+        error: `http_${response.status}`,
+      });
       throw new Error(`${provider} 요청에 실패했습니다. (${response.status})`);
     }
 
@@ -124,6 +139,15 @@ export async function chatCompletionWithProvider(
     const text = data.choices?.[0]?.message?.content?.trim() ?? "";
     if (!text) {
       await recordApiUsage(slot, { success: false }).catch(() => undefined);
+      recordLlmTrace({
+        provider,
+        model: config.model,
+        ok: false,
+        latencyMs: Date.now() - started,
+        messageChars,
+        helicone: helicone.enabled,
+        error: "empty_response",
+      });
       throw new Error(`${provider} 응답이 비어 있습니다.`);
     }
 
@@ -142,6 +166,17 @@ export async function chatCompletionWithProvider(
       outputUnits: tokenUsage?.output,
     }).catch(() => undefined);
 
+    recordLlmTrace({
+      provider,
+      model: config.model,
+      ok: true,
+      latencyMs: Date.now() - started,
+      inputTokens: tokenUsage?.input,
+      outputTokens: tokenUsage?.output,
+      messageChars,
+      helicone: helicone.enabled,
+    });
+
     return {
       text,
       usedFallback: false,
@@ -156,6 +191,15 @@ export async function chatCompletionWithProvider(
       throw e;
     }
     await recordApiUsage(slot, { success: false }).catch(() => undefined);
+    recordLlmTrace({
+      provider,
+      model: config.model,
+      ok: false,
+      latencyMs: Date.now() - started,
+      messageChars,
+      helicone: helicone.enabled,
+      error: e instanceof Error ? e.message : String(e),
+    });
     throw e;
   }
 }

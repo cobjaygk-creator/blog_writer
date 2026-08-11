@@ -31,6 +31,11 @@ export type SharedDraftInput = {
   postMode?: "worklog" | "product" | null;
   /** Formatted web research brief (esp. when images are empty). */
   webResearch?: string | null;
+  /** Same-product points distilled from learned source posts (RAG-lite). */
+  learnedSupplements?: Array<{
+    point: string;
+    kind: "process" | "check" | "tip" | "caution" | "other";
+  }> | null;
 };
 
 export type ParallelDraftResult = {

@@ -18,6 +18,8 @@ const generateSchema = z.object({
   productHighlights: z.string().trim().max(2000).optional().nullable(),
   captionTone: z.string().trim().min(1).max(200).optional().nullable(),
   length: z.enum(TOPIC_LENGTHS).optional(),
+  useLearnedSupplement: z.boolean().optional(),
+  excludedSupplementPoints: z.array(z.string().trim().min(1).max(120)).max(12).optional(),
 });
 
 type Params = { params: Promise<{ id: string }> };
@@ -56,6 +58,8 @@ export async function POST(request: Request, { params }: Params) {
       productHighlights: parsed.data.productHighlights,
       captionTone: parsed.data.captionTone,
       length: parsed.data.length,
+      useLearnedSupplement: parsed.data.useLearnedSupplement,
+      excludedSupplementPoints: parsed.data.excludedSupplementPoints,
     },
   });
 
