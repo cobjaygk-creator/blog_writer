@@ -6,6 +6,7 @@ import { assertCanGenerate } from "@/lib/plan-guards";
 import {
   createGenerationJob,
   toJobPublic,
+  type GenerateReferenceRequest,
   type GenerateRequest,
   type GenerateTopicRequest,
 } from "@/lib/post-generate-job";
@@ -35,6 +36,23 @@ const createSchema = z.discriminatedUnion("kind", [
     providers: providersSchema,
     mergeExistingDrafts: z.boolean().optional(),
   }),
+  z
+    .object({
+      kind: z.literal("generate_reference"),
+      referenceUrl: z.string().trim().url().max(2000).optional().nullable(),
+      referenceText: z.string().trim().max(20000).optional().nullable(),
+      keyword: z.string().trim().min(1).max(120).optional().nullable(),
+      length: z.enum(TOPIC_LENGTHS).optional(),
+      imageCount: z.number().int().min(1).max(6).optional(),
+      imageSource: z.enum(["unsplash", "ai"]).optional(),
+      replaceImages: z.boolean().optional(),
+      providers: providersSchema,
+      mergeExistingDrafts: z.boolean().optional(),
+    })
+    .refine(
+      (v) => Boolean(v.referenceUrl?.trim()) || (v.referenceText?.trim().length || 0) >= 80,
+      { message: "참고 글의 주소 또는 본문(80자 이상)이 필요합니다." },
+    ),
 ]);
 
 type Params = { params: Promise<{ id: string }> };
@@ -58,7 +76,7 @@ export async function POST(request: Request, { params }: Params) {
     return jsonError("요청이 올바르지 않습니다.", 400);
   }
 
-  let requestPayload: GenerateRequest | GenerateTopicRequest;
+  let requestPayload: GenerateRequest | GenerateTopicRequest | GenerateReferenceRequest;
   if (parsed.data.kind === "generate") {
     const keyword = parsed.data.keyword?.trim() || post.keyword?.trim();
     if (!keyword) return jsonError("키워드가 필요합니다.", 400);
@@ -72,9 +90,21 @@ export async function POST(request: Request, { params }: Params) {
       useLearnedSupplement: parsed.data.useLearnedSupplement,
       excludedSupplementPoints: parsed.data.excludedSupplementPoints,
     };
-  } else {
+  } else if (parsed.data.kind === "generate_topic") {
     requestPayload = {
       topic: parsed.data.topic.trim(),
+      length: parsed.data.length,
+      imageCount: parsed.data.imageCount,
+      imageSource: parsed.data.imageSource,
+      replaceImages: parsed.data.replaceImages,
+      providers: parsed.data.providers,
+      mergeExistingDrafts: parsed.data.mergeExistingDrafts,
+    };
+  } else {
+    requestPayload = {
+      referenceUrl: parsed.data.referenceUrl?.trim() || null,
+      referenceText: parsed.data.referenceText?.trim() || null,
+      keyword: parsed.data.keyword?.trim() || null,
       length: parsed.data.length,
       imageCount: parsed.data.imageCount,
       imageSource: parsed.data.imageSource,

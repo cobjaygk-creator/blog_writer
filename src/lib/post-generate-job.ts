@@ -24,6 +24,11 @@ import {
   normalizeTraitsJson,
 } from "@/lib/style-traits";
 import {
+  deriveReferenceTopic,
+  resolveReferenceSource,
+  type ReferenceBrief,
+} from "@/lib/reference-source";
+import {
   generateTopicBlogDraft,
   planTopicDraft,
   type TopicImageSlot,
@@ -78,10 +83,25 @@ export type GenerateTopicRequest = {
   mergeExistingDrafts?: boolean;
 };
 
+/** Transform one reference article into a new post (same subject, new wording/photos). */
+export type GenerateReferenceRequest = {
+  referenceUrl?: string | null;
+  referenceText?: string | null;
+  keyword?: string | null;
+  length?: TopicLength;
+  imageCount?: number;
+  imageSource?: "unsplash" | "ai";
+  replaceImages?: boolean;
+  providers?: DraftProvider[];
+  mergeExistingDrafts?: boolean;
+};
+
+export type JobKind = "generate" | "generate_topic" | "generate_reference";
+
 export type JobPublic = {
   id: string;
   postId: string;
-  kind: "generate" | "generate_topic";
+  kind: JobKind;
   status: "pending" | "running" | "completed" | "failed";
   phase: string;
   error: string | null;
@@ -162,6 +182,8 @@ type TopicContext = {
   draftResults: TopicDraftResultRow[];
   styleMeta?: Record<string, unknown>;
   seoMeta?: Record<string, unknown>;
+  /** Set only for generate_reference jobs. */
+  reference?: ReferenceBrief | null;
 };
 
 export { phaseStatusLabel } from "@/lib/post-generate-job-ui";
@@ -253,8 +275,8 @@ async function markStaleIfNeeded(job: {
 export async function createGenerationJob(input: {
   postId: string;
   userId: string;
-  kind: "generate" | "generate_topic";
-  request: GenerateRequest | GenerateTopicRequest;
+  kind: JobKind;
+  request: GenerateRequest | GenerateTopicRequest | GenerateReferenceRequest;
 }) {
   const active = await prisma.postGenerationJob.findFirst({
     where: {
@@ -270,7 +292,12 @@ export async function createGenerationJob(input: {
     }
   }
 
-  const initialPhase = input.kind === "generate" ? "assemble" : "research";
+  const initialPhase =
+    input.kind === "generate"
+      ? "assemble"
+      : input.kind === "generate_reference"
+        ? "reference"
+        : "research";
   const created = await prisma.postGenerationJob.create({
     data: {
       postId: input.postId,
@@ -879,6 +906,22 @@ async function tickGenerateTopic(job: {
   const req = asCtx<GenerateTopicRequest>(job.requestJson);
   const ctx = asCtx<TopicContext>(job.contextJson);
 
+  if (job.phase === "reference") {
+    const next = await phaseReference(
+      job.postId,
+      job.userId,
+      asCtx<GenerateReferenceRequest>(job.requestJson),
+    );
+    return prisma.postGenerationJob.update({
+      where: { id: job.id },
+      data: {
+        status: "running",
+        phase: "plan",
+        contextJson: next as object,
+      },
+    });
+  }
+
   if (job.phase === "research" || job.phase === "pending") {
     const next = await phaseTopicResearch(job.postId, job.userId, req);
     return prisma.postGenerationJob.update({
@@ -902,6 +945,7 @@ async function tickGenerateTopic(job: {
       research: ctx.research,
       sampleAnchors: ctx.sampleAnchors,
       similarSources: ctx.similarSources,
+      reference: ctx.reference,
     });
     return prisma.postGenerationJob.update({
       where: { id: job.id },
@@ -996,6 +1040,7 @@ async function runTopicDraftProvider(
       research: ctx.research,
       sampleAnchors: ctx.sampleAnchors,
       similarSources: ctx.similarSources,
+      reference: ctx.reference,
       draftProvider: provider,
     });
     const imageInputs = (ctx.createdImages || []).map((img) => ({
@@ -1165,6 +1210,83 @@ async function phaseTopicResearch(
     sampleAnchors,
     similarSources,
     research,
+    plan: null,
+    stockImages: [],
+    imageErrors: [],
+    resolvedSource: imageSourcePref,
+    unsplashRateLimited: false,
+    slots: [],
+    createdImages: [],
+    draftResults: [],
+  };
+}
+
+/**
+ * generate_reference: pull the reference article, then reuse the topic
+ * plan/images/draft phases with the reference attached to the prompts.
+ */
+async function phaseReference(
+  postId: string,
+  userId: string,
+  req: GenerateReferenceRequest,
+): Promise<TopicContext> {
+  const post = await prisma.post.findFirst({
+    where: { id: postId, brand: { userId } },
+    include: { brand: { select: { id: true, name: true } } },
+  });
+  if (!post) throw new Error("포스트를 찾을 수 없습니다.");
+
+  const reference = await resolveReferenceSource({
+    url: req.referenceUrl,
+    text: req.referenceText,
+  });
+  const topic = deriveReferenceTopic(reference, req.keyword || post.keyword);
+
+  const { limits, unlimited } = await getUserPlan(userId);
+  const dualEnabled = unlimited || limits.dualGenerationEnabled;
+  const maxImages = Math.min(limits.imagesPerPost, uploadMaxImagesPerPost(), 6);
+  const imageCount = Math.min(req.imageCount ?? 3, maxImages);
+  const imageSourcePref = req.imageSource === "ai" ? "ai" : "unsplash";
+  const length =
+    req.length && (TOPIC_LENGTHS as readonly string[]).includes(req.length)
+      ? req.length
+      : undefined;
+
+  await ensureMinimalStyleProfile(post.brandId);
+  const styleProfile = await prisma.styleProfile.findUnique({
+    where: { brandId: post.brandId },
+  });
+  const brandTone = normalizeTraitsJson(styleProfile?.traitsJson).tone;
+  const voiceTone = resolveCaptionTone(post.captionTone, brandTone);
+  const traitsForDraft = {
+    ...normalizeExtendedTraits(styleProfile?.traitsJson),
+    tone: voiceTone,
+  };
+
+  const sampleAnchorsRaw = Array.isArray(styleProfile?.sampleAnchors)
+    ? (styleProfile!.sampleAnchors as Array<{ excerpt?: string }>).filter(
+        (a): a is { excerpt: string } => typeof a?.excerpt === "string",
+      )
+    : [];
+  const sampleAnchors = rankAnchorsByKeyword(sampleAnchorsRaw, topic, 4);
+
+  return {
+    topic,
+    length,
+    imageCount,
+    imageSourcePref,
+    replaceImages: req.replaceImages !== false,
+    dualEnabled,
+    providers: req.providers,
+    mergeExistingDrafts: req.mergeExistingDrafts,
+    brandName: post.brand.name,
+    styleSummary: styleProfile?.summaryText || null,
+    traitsForDraft,
+    sampleAnchors,
+    // The reference itself is the research material — skip the web pass.
+    similarSources: [],
+    research: null,
+    reference,
     plan: null,
     stockImages: [],
     imageErrors: [],
@@ -1454,6 +1576,13 @@ async function persistTopic(
           isNewsTopic: ctx.research.isNewsTopic,
           factCount: ctx.research.facts.length,
           sourceCount: ctx.research.sources.length,
+        }
+      : null,
+    reference: ctx.reference
+      ? {
+          title: ctx.reference.title,
+          sourceUrl: ctx.reference.sourceUrl,
+          charCount: ctx.reference.text.length,
         }
       : null,
     images: {

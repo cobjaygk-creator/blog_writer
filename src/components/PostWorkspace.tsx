@@ -169,7 +169,8 @@ export function PostWorkspace({
   const [dualFailNotice, setDualFailNotice] = useState<string | null>(null);
   const [generatePhaseLabel, setGeneratePhaseLabel] = useState<string | null>(null);
   const [generatePhase, setGeneratePhase] = useState<string>("pending");
-  const [generateKind, setGenerateKind] = useState<"generate" | "generate_topic">("generate");
+  const [generateKind, setGenerateKind] =
+    useState<ClientJob["kind"]>("generate");
   const [generateComplete, setGenerateComplete] = useState(false);
 
   function noteGeneratePhase(job: Pick<ClientJob, "phase" | "kind">) {

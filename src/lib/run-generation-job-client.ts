@@ -3,7 +3,7 @@
 export type ClientJob = {
   id: string;
   postId: string;
-  kind: "generate" | "generate_topic";
+  kind: "generate" | "generate_topic" | "generate_reference";
   status: "pending" | "running" | "completed" | "failed";
   phase: string;
   error: string | null;

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, GripVertical, Images } from "lucide-react";
+import { FileText, GripVertical, Images, Link2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -28,7 +28,7 @@ type BrandOption = {
   learned: boolean;
 };
 
-type MediaPath = "with_media" | "without_media";
+type MediaPath = "with_media" | "without_media" | "with_reference";
 
 type UploadedImage = {
   id: string;
@@ -89,14 +89,23 @@ export function StudioQuickCreate({
   const [generateComplete, setGenerateComplete] = useState(false);
   const [useLearnedSupplement, setUseLearnedSupplement] = useState(true);
   const [excludedSupplementPoints, setExcludedSupplementPoints] = useState<string[]>([]);
+  const [referenceUrl, setReferenceUrl] = useState("");
+  const [referenceText, setReferenceText] = useState("");
   const saveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const withMedia = mediaPath === "with_media";
+  const withReference = mediaPath === "with_reference";
   const hasMedia = images.length > 0 || videos.length > 0;
   const keywordReady = keyword.trim().length > 0;
   const generateOpen = busy === "generate";
-  const generateKind = withMedia ? "generate" : "generate_topic";
+  const generateKind = withMedia
+    ? "generate"
+    : withReference
+      ? "generate_reference"
+      : "generate_topic";
   const generateRange = phaseProgressRange(generatePhase, generateKind);
+  const referenceReady =
+    referenceUrl.trim().length > 0 || referenceText.trim().length >= 80;
 
   async function ensurePost(): Promise<string> {
     if (postId) return postId;
@@ -393,6 +402,64 @@ export function StudioQuickCreate({
     }
   }
 
+  async function createFromReferenceAndGenerate() {
+    if (!referenceReady) {
+      setError("참고할 글의 주소를 넣거나 본문을 80자 이상 붙여넣어 주세요.");
+      return;
+    }
+    setBusy("generate");
+    setError(null);
+    setGenerateComplete(false);
+    setGeneratePhase("reference");
+    setGeneratePhaseLabel(phaseStatusLabel("reference", "generate_reference"));
+    try {
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId: brandId || USE_DEFAULT_THEME_ID,
+          mode: "topic",
+          keyword: keyword.trim() || undefined,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        post?: { id: string };
+      };
+      if (!res.ok || !data.post?.id) {
+        throw new Error(data.error || "글을 만들지 못했습니다.");
+      }
+      const id = data.post.id;
+      setPostId(id);
+
+      await runGenerationJobClient({
+        postId: id,
+        body: {
+          kind: "generate_reference",
+          referenceUrl: referenceUrl.trim() || null,
+          referenceText: referenceText.trim() || null,
+          keyword: keyword.trim() || null,
+          length,
+          imageCount: TOPIC_LENGTH_PRESETS[length].sectionCount,
+          imageSource: "unsplash",
+          replaceImages: true,
+        },
+        onPhase: (job: ClientJob) => {
+          setGeneratePhase(job.phase);
+          setGeneratePhaseLabel(phaseStatusLabel(job.phase, job.kind));
+        },
+      });
+      setGenerateComplete(true);
+      router.push(`/posts/${id}`);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "초안 생성에 실패했습니다.");
+      setBusy(null);
+      setGenerateComplete(false);
+      setGeneratePhaseLabel(null);
+    }
+  }
+
   async function flushPromptSaves() {
     for (const [imageId, timer] of saveTimers.current) {
       clearTimeout(timer);
@@ -476,7 +543,9 @@ export function StudioQuickCreate({
         detail={
           withMedia
             ? "테마·키워드·참고 내용·사진 프롬프트를 반영해 초안을 만들고 있습니다."
-            : "키워드·테마를 바탕으로 포스트 초안을 만들고 있습니다."
+            : withReference
+              ? "참고 글의 주제를 유지하고, 문장과 사진은 새로 만들고 있습니다."
+              : "키워드·테마를 바탕으로 포스트 초안을 만들고 있습니다."
         }
       />
 
@@ -485,7 +554,7 @@ export function StudioQuickCreate({
           <div>
             <h1 className="text-[19px] font-bold text-[var(--foreground)]">어떻게 시작할까요?</h1>
             <p className="mt-1 text-[12.5px] text-[var(--muted)]">
-              사진·영상 유무에 따라 다음 단계가 달라져요.
+              가진 재료에 따라 다음 단계가 달라져요.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -513,6 +582,20 @@ export function StudioQuickCreate({
               <span className="text-[14px] font-bold text-[var(--foreground)]">사진이나 영상이 없어요</span>
               <span className="text-[11.5px] leading-[1.6] text-[var(--muted)]">
                 키워드만으로 블로그 포스트를 쓰고, 필요하면 이미지를 찾아 붙입니다.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMediaPath("with_reference")}
+              className="flex flex-col items-start gap-3 rounded-[12px] border border-[var(--border)] bg-white p-5 text-left transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] sm:col-span-2"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[var(--surface-2)] text-[var(--muted)]">
+                <Link2 className="h-[18px] w-[18px]" strokeWidth={1.8} />
+              </span>
+              <span className="text-[14px] font-bold text-[var(--foreground)]">참고할 글이 있어요</span>
+              <span className="text-[11.5px] leading-[1.6] text-[var(--muted)]">
+                마음에 드는 글의 주소나 본문을 넣으면, 같은 주제로 문장·사진을 새로 만들어 씁니다.
+                원문을 그대로 복사하지 않습니다.
               </span>
             </button>
           </div>
@@ -544,15 +627,140 @@ export function StudioQuickCreate({
             onClick={() => setMediaPath("without_media")}
             className={cn(
               "flex h-[29px] items-center justify-center rounded-[7px] px-3.5 text-[12px] font-semibold",
-              !withMedia ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]" : "text-[#8A8A94]",
+              mediaPath === "without_media"
+                ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]"
+                : "text-[#8A8A94]",
             )}
           >
             글만
           </button>
+          <button
+            type="button"
+            onClick={() => setMediaPath("with_reference")}
+            className={cn(
+              "flex h-[29px] items-center justify-center rounded-[7px] px-3.5 text-[12px] font-semibold",
+              withReference
+                ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]"
+                : "text-[#8A8A94]",
+            )}
+          >
+            참고 글
+          </button>
         </div>
       </div>
 
-      {!withMedia ? (
+      {withReference ? (
+        <div className="mx-auto w-full max-w-xl flex-1 space-y-4 p-6">
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">테마</span>
+            <div className="flex flex-wrap gap-[7px]">
+              <BrandChip
+                label="기본 테마"
+                selected={brandId === USE_DEFAULT_THEME_ID}
+                disabled={Boolean(postId)}
+                onClick={() => setBrandId(USE_DEFAULT_THEME_ID)}
+              />
+              {brands.map((b) => (
+                <BrandChip
+                  key={b.id}
+                  label={b.name}
+                  learned={b.learned}
+                  selected={brandId === b.id}
+                  disabled={Boolean(postId)}
+                  onClick={() => setBrandId(b.id)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">
+              참고할 글 주소
+            </span>
+            <div className="flex h-11 items-center gap-2.5 rounded-[10px] border border-[var(--border)] bg-white px-3.5 focus-within:border-[#16161A] focus-within:shadow-[0_0_0_3px_rgba(22,22,26,.06)]">
+              <input
+                value={referenceUrl}
+                onChange={(e) => setReferenceUrl(e.target.value)}
+                placeholder="https://blog.naver.com/..."
+                maxLength={2000}
+                className="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-[var(--foreground)] outline-none placeholder:text-[var(--hint)]"
+              />
+            </div>
+            <p className="text-[11.5px] leading-[1.6] text-[var(--muted)]">
+              비공개 글이거나 주소로 못 가져오면 아래에 본문을 붙여넣어 주세요.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">
+              또는 본문 붙여넣기
+            </span>
+            <Textarea
+              value={referenceText}
+              onChange={(e) => setReferenceText(e.target.value)}
+              placeholder="참고할 글의 본문을 붙여넣어 주세요 (80자 이상)"
+              rows={7}
+              maxLength={20000}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">
+              키워드 (선택)
+            </span>
+            <div className="flex h-11 items-center gap-2.5 rounded-[10px] border border-[var(--border)] bg-white px-3.5 focus-within:border-[#16161A] focus-within:shadow-[0_0_0_3px_rgba(22,22,26,.06)]">
+              <input
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="비우면 참고 글의 제목을 사용합니다"
+                maxLength={120}
+                className="min-w-0 flex-1 border-0 bg-transparent text-[15px] font-semibold text-[var(--foreground)] outline-none placeholder:font-normal placeholder:text-[var(--hint)]"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">글 길이</span>
+            <div className="flex flex-wrap gap-[7px]">
+              {LENGTH_OPTIONS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setLength(id)}
+                  className={cn(
+                    "flex h-8 items-center rounded-[8px] border px-3 text-[12.5px] font-semibold transition-colors",
+                    length === id
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                      : "border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--border-strong)]",
+                  )}
+                >
+                  {TOPIC_LENGTH_PRESETS[id].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[11.5px] leading-[1.6] text-[var(--muted)]">
+            참고 글의 주제와 다루는 범위만 참고하고, 문장·소제목·사진은 새로 만듭니다. 원문 문장을 그대로
+            옮기지 않습니다.
+          </p>
+
+          {error ? (
+            <p className="rounded-[8px] border border-[#F7E7E5] bg-[#F7E7E5] px-3 py-2 text-[12.5px] text-[#C2453C]">
+              {error}
+            </p>
+          ) : null}
+          <Button
+            type="button"
+            size="lg"
+            className="w-full"
+            disabled={busy !== null || !referenceReady}
+            onClick={() => void createFromReferenceAndGenerate()}
+          >
+            {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
+          </Button>
+        </div>
+      ) : !withMedia ? (
         <div className="mx-auto w-full max-w-xl flex-1 space-y-4 p-6">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">테마</span>

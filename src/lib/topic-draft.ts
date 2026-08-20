@@ -2,6 +2,10 @@ import { chatCompletion } from "@/lib/llm";
 import { allowFallback, isLlmConfigured, llmMaxTokens } from "@/lib/integrations";
 import { prepareEditorHtml, SINGLE_IMAGE_STYLE, singleImageTag } from "@/lib/image-style";
 import type { DraftProvider, DraftTokenUsage } from "@/lib/llm-providers";
+import {
+  formatReferenceForPrompt,
+  type ReferenceBrief,
+} from "@/lib/reference-source";
 import { normalizeExtendedTraits } from "@/lib/style-traits";
 import {
   getTopicLengthPreset,
@@ -47,6 +51,23 @@ export type TopicImageSlot = {
   bulletPoints: string[];
 };
 
+/**
+ * Reference-rewrite guardrail. The product intent is legal re-creation:
+ * same subject and coverage, new wording. Never a copy.
+ */
+const REFERENCE_RULES = `참고 글 재작성 규칙(필수):
+- 참고 글의 주제·다루는 범위·정보 흐름은 유지하세요.
+- 문장·구절을 그대로 옮기지 마세요. 5단어 이상 연속 동일 표현 금지.
+- 표현·문장 구조·비유·예시는 새로 쓰고, 소제목도 같은 뜻의 다른 표현으로 바꾸세요.
+- 참고 글에 없는 수치·날짜·인용을 새로 만들지 마세요.
+- 참고 글의 브랜드명·사람이름·연락처·상호는 옮기지 말고 일반 표현으로 바꾸세요.`;
+
+function referenceBlock(reference?: ReferenceBrief | null) {
+  if (!reference?.text?.trim()) return null;
+  return `참고 글(재작성 대상 — 복붙 금지):
+${formatReferenceForPrompt(reference)}`;
+}
+
 /** Plan sections + English image prompts for a topic. */
 export async function planTopicDraft(input: {
   topic: string;
@@ -58,6 +79,7 @@ export async function planTopicDraft(input: {
   research?: TopicResearchBrief | null;
   sampleAnchors?: Array<{ excerpt: string }>;
   similarSources?: Array<{ title: string | null; excerpt: string }>;
+  reference?: ReferenceBrief | null;
 }): Promise<TopicPlan> {
   const preset = getTopicLengthPreset(input.length);
   const count = Math.min(
@@ -76,6 +98,7 @@ export async function planTopicDraft(input: {
     .slice(0, 2)
     .map((s, i) => `유사${i + 1}${s.title ? ` · ${s.title}` : ""}: ${s.excerpt.slice(0, 320)}`)
     .join("\n") || "(없음)";
+  const reference = referenceBlock(input.reference);
 
   if (!isLlmConfigured()) {
     if (!allowFallback()) throw new Error("LLM_API_KEY가 설정되지 않았습니다.");
@@ -93,7 +116,14 @@ export async function planTopicDraft(input: {
 목표 분량: ${preset.label} (${preset.targetChars.min}~${preset.targetChars.max}자 분량의 글을 쓸 수 있게 섹션·포인트를 충분히 촘촘히).
 금융·투자·의료·법률 주제면 disclaimer에 한 줄 면책(예: 투자 조언이 아님)을 넣고, 아니면 null.
 과장·허위 수치·출처 없는 단정 금지. 검색 팩트에 없는 수치/날짜를 만들지 마세요. 설명형·읽기 쉬운 구성.
-테마 샘플·유사 원문의 말투/용어 힌트를 반영하되 문장 복붙 금지.`,
+테마 샘플·유사 원문의 말투/용어 힌트를 반영하되 문장 복붙 금지.${
+            reference
+              ? `
+
+${REFERENCE_RULES}
+참고 글이 주어지면 그 글이 다루는 소주제를 섹션으로 재구성하세요.`
+              : ""
+          }`,
         },
         {
           role: "user",
@@ -110,7 +140,7 @@ export async function planTopicDraft(input: {
 섹션당 포인트: ${preset.bulletMin}~${preset.bulletMax}개
 
 ${researchBlock}
-
+${reference ? `\n${reference}\n` : ""}
 원문 샘플(말투 참고):
 ${anchors}
 
@@ -145,6 +175,7 @@ export async function generateTopicBlogDraft(input: {
   research?: TopicResearchBrief | null;
   sampleAnchors?: Array<{ excerpt: string }>;
   similarSources?: Array<{ title: string | null; excerpt: string }>;
+  reference?: ReferenceBrief | null;
   draftProvider?: DraftProvider;
 }): Promise<TopicDraftResult> {
   const draftProvider = input.draftProvider || "gpt";
@@ -162,6 +193,7 @@ export async function generateTopicBlogDraft(input: {
     .slice(0, 2)
     .map((s, i) => `유사${i + 1}${s.title ? ` · ${s.title}` : ""}: ${s.excerpt.slice(0, 320)}`)
     .join("\n") || "(없음)";
+  const reference = referenceBlock(input.reference);
 
   if (!isLlmConfigured()) {
     if (!allowFallback()) throw new Error("LLM_API_KEY가 설정되지 않았습니다.");
@@ -200,7 +232,14 @@ ${bullets || "  - (없음)"}`;
 9) 분량(필수): ${preset.label}. 본문 순수 텍스트 기준 약 ${preset.targetChars.min}~${preset.targetChars.max}자.
    짧게 요약만 쓰지 마세요. 각 섹션 포인트를 문장으로 충분히 풀어 쓰세요.
    ${lengthId === "long" ? "구체 예시, 왜 그런지, 실생활 적용을 넣으세요." : ""}
-   ${lengthId === "short" ? "핵심만 간결히. 군더더기 금지." : ""}`,
+   ${lengthId === "short" ? "핵심만 간결히. 군더더기 금지." : ""}${
+     reference
+       ? `
+
+${REFERENCE_RULES}
+- 참고 글의 사진 설명이나 이미지 주소는 쓰지 말고, 제공된 이미지 URL만 사용하세요.`
+       : ""
+   }`,
         },
         {
           role: "user",
@@ -217,7 +256,7 @@ ${bullets || "  - (없음)"}`;
 색 예시: ${(traits.colorPalette || []).join(", ") || "#0B7285"}
 
 ${researchBlock}
-
+${reference ? `\n${reference}\n` : ""}
 원문 샘플(말투 참고, 복붙 금지):
 ${anchors}
 
@@ -227,7 +266,11 @@ ${similar}
 섹션·이미지:
 ${slotLines}
 
-요청: 위 섹션 순서로 본문을 쓰고, 검색 팩트를 자연스럽게 녹이세요. 이미지 URL이 있는 섹션에는 이미지를 넣으세요. 목표 분량을 맞추세요.`,
+요청: 위 섹션 순서로 본문을 쓰고, 검색 팩트를 자연스럽게 녹이세요. 이미지 URL이 있는 섹션에는 이미지를 넣으세요. 목표 분량을 맞추세요.${
+            reference
+              ? " 참고 글과 같은 주제를 다루되, 문장은 전부 새로 쓰세요."
+              : ""
+          }`,
         },
       ],
       {

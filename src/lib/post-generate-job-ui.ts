@@ -2,7 +2,7 @@
 
 export function phaseStatusLabel(
   phase: string,
-  kind: "generate" | "generate_topic" = "generate",
+  kind: "generate" | "generate_topic" | "generate_reference" = "generate",
 ) {
   switch (phase) {
     case "pending":
@@ -11,6 +11,8 @@ export function phaseStatusLabel(
       return kind === "generate"
         ? "자료·문체 준비 · 보통 10~30초"
         : "준비 중";
+    case "reference":
+      return "참고 글 불러오기 · 보통 5~20초";
     case "research":
       return "웹 자료 조사 · 보통 10~30초";
     case "plan":

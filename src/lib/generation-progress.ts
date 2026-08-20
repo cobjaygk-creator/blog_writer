@@ -1,6 +1,10 @@
 /** Target / soft-ceiling percents for generation UI (client-safe). */
 
-export type ProgressKind = "generate" | "generate_topic" | "wizard";
+export type ProgressKind =
+  | "generate"
+  | "generate_topic"
+  | "generate_reference"
+  | "wizard";
 
 /** Floor percent when a phase starts; display eases up to soft ceiling while waiting. */
 export function phaseProgressRange(
@@ -20,10 +24,11 @@ export function phaseProgressRange(
     }
   }
 
-  if (kind === "generate_topic") {
+  if (kind === "generate_topic" || kind === "generate_reference") {
     switch (phase) {
       case "pending":
         return { floor: 2, ceiling: 8 };
+      case "reference":
       case "research":
         return { floor: 8, ceiling: 22 };
       case "plan":

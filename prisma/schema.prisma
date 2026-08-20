@@ -72,6 +72,7 @@ enum GenerationJobStatus {
 enum GenerationJobKind {
   generate
   generate_topic
+  generate_reference
 }
 
 /// Wizard content mode for a post
@@ -271,7 +272,7 @@ model PostGenerationJob {
   userId      String
   kind        GenerationJobKind
   status      GenerationJobStatus  @default(pending)
-  /// assemble | research | plan | images | draft_gpt | draft_gemini | draft | persist
+  /// assemble | reference | research | plan | images | draft_gpt | draft_gemini | draft | persist
   phase       String               @default("pending")
   requestJson Json
   contextJson Json?
