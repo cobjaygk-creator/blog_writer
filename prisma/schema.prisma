@@ -215,6 +215,9 @@ model StyleProfile {
   sampleAnchors Json
   /// Structured traits for stabler regeneration (optional JSON object)
   traitsJson    Json?
+  /// Pristine learned traits, untouched by per-trait on/off toggles — lets a
+  /// disabled trait (see traitsJson) be restored without re-running learning.
+  rawTraitsJson Json?
   version       Int      @default(1)
   updatedAt     DateTime @updatedAt
   createdAt     DateTime @default(now())

@@ -62,6 +62,18 @@ Service auth: `PLATFORM_SERVICE_TOKEN` + `X-User-Id` (or `Authorization: Bearer 
 
 한도는 관리자 요금제 화면에서 조정합니다.
 
+## Deploy (Oracle Cloud Free Tier)
+
+Docker Compose로 Always Free VM에 올리는 가이드:
+
+→ [`deploy/oracle-free.md`](deploy/oracle-free.md)
+
+```bash
+cp .env.production.example .env.production
+# 값 채운 뒤
+docker compose up -d --build
+```
+
 ## Setup
 
 1. PostgreSQL 준비 후 DB 생성  

@@ -1479,7 +1479,7 @@ export function PostWorkspace({
               {busy === "generate"
                 ? "생성 중…"
                 : post.mode === "topic"
-                  ? "주제 글 다시 만들기"
+                  ? "포스트 다시 만들기"
                   : "초안 생성"}
             </Button>
             {post.images.length > 0 && body.trim() && !needsSelection ? (

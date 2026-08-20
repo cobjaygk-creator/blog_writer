@@ -4,14 +4,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { NewCutLink } from "@/components/NewCutLink";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { NewCutLink } from "@/components/NewCutLink";
 import { postStatusLabel } from "@/lib/post-status";
+import {
+  isRuleActive,
+  ruleDescription,
+  ruleTitle,
+  STYLE_RULE_KEYS,
+  type StyleRuleKey,
+} from "@/lib/style-rules";
 import { normalizeExtendedTraits } from "@/lib/style-traits";
 
 type SourcePost = {
@@ -36,6 +42,7 @@ type StyleProfile = {
   summaryText: string;
   sampleAnchors: unknown;
   traitsJson: unknown;
+  rawTraitsJson?: unknown;
   version: number;
   updatedAt: string;
 } | null;
@@ -46,6 +53,38 @@ type PostSummary = {
   keyword: string | null;
   createdAt: string;
 };
+
+function sourceLabel(url?: string | null) {
+  if (!url) return "직접 입력";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "직접 입력";
+  }
+}
+
+function shortDate(iso: string) {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function intensity(label: string) {
+  if (/많음|자주|높음|길게|중장문/.test(label)) return 80;
+  if (/중간|보통/.test(label)) return 55;
+  if (/적음|낮음|짧|거의 없음|사용 안 함|없음/.test(label)) return 22;
+  return 50;
+}
+
+function firstExcerpt(anchors: unknown): string | null {
+  if (!Array.isArray(anchors)) return null;
+  for (const a of anchors) {
+    if (a && typeof a === "object" && "excerpt" in a) {
+      const excerpt = (a as { excerpt?: unknown }).excerpt;
+      if (typeof excerpt === "string" && excerpt.trim()) return excerpt.trim();
+    }
+  }
+  return null;
+}
 
 export function BrandWorkspace({
   brandId,
@@ -62,9 +101,11 @@ export function BrandWorkspace({
 }) {
   const router = useRouter();
   const [name, setName] = useState(brandName);
+  const [editingName, setEditingName] = useState(false);
   const [sources, setSources] = useState(initialSources);
   const [style, setStyle] = useState(initialStyle);
   const [posts] = useState(initialPosts);
+  const [showSourceForm, setShowSourceForm] = useState(false);
   const [sourceMode, setSourceMode] = useState<"text" | "url" | "bulk">("bulk");
   const [rawText, setRawText] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -72,6 +113,7 @@ export function BrandWorkspace({
   const [importProgress, setImportProgress] = useState<ImportJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [ruleBusy, setRuleBusy] = useState<StyleRuleKey | null>(null);
 
   async function renameBrand(event: FormEvent) {
     event.preventDefault();
@@ -88,6 +130,7 @@ export function BrandWorkspace({
       setError(data.error || "이름 변경 실패");
       return;
     }
+    setEditingName(false);
     router.refresh();
   }
 
@@ -95,10 +138,7 @@ export function BrandWorkspace({
     event.preventDefault();
     setBusy("source");
     setError(null);
-    const payload =
-      sourceMode === "url"
-        ? { url: sourceUrl.trim() }
-        : { rawText: rawText.trim() };
+    const payload = sourceMode === "url" ? { url: sourceUrl.trim() } : { rawText: rawText.trim() };
     const res = await fetch(`/api/brands/${brandId}/source-posts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -107,7 +147,6 @@ export function BrandWorkspace({
     const data = (await res.json().catch(() => ({}))) as {
       error?: string;
       sourcePost?: SourcePost;
-      meta?: { title?: string };
     };
     setBusy(null);
     if (!res.ok || !data.sourcePost) {
@@ -151,9 +190,6 @@ export function BrandWorkspace({
     setImportProgress(job);
 
     while (job.status === "fetching" || job.status === "learning" || job.status === "listing") {
-      if (job.status === "learning") {
-        setImportProgress(job);
-      }
       const tickRes = await fetch(`/api/brands/${brandId}/source-import/${job.id}/tick`, {
         method: "POST",
       });
@@ -230,65 +266,120 @@ export function BrandWorkspace({
     router.refresh();
   }
 
-  return (
-    <div className="space-y-6">
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+  async function toggleRule(key: StyleRuleKey, enabled: boolean) {
+    setRuleBusy(key);
+    const res = await fetch(`/api/brands/${brandId}/style`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ruleKey: key, enabled }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; styleProfile?: StyleProfile };
+    setRuleBusy(null);
+    if (!res.ok || !data.styleProfile) {
+      setError(data.error || "규칙 변경 실패");
+      return;
+    }
+    setStyle(data.styleProfile);
+  }
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>테마 정보</CardTitle>
-          <div className="flex gap-2">
-            <NewCutLink brandId={brandId}>
-              <Button type="button" variant="outline" size="sm">
-                New Cut 쇼츠 만들기
-              </Button>
-            </NewCutLink>
-            <Button type="button" variant="danger" size="sm" onClick={deleteBrand} disabled={busy === "delete"}>
-              삭제
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={renameBrand} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <Label className="flex-1">
-              <span>이름</span>
-              <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
-            </Label>
-            <Button type="submit" disabled={busy === "rename"}>
+  const traits = style ? normalizeExtendedTraits(style.traitsJson) : null;
+  const sampleQuote = style ? firstExcerpt(style.sampleAnchors) : null;
+  const chips = traits?.domainTerms?.length ? traits.domainTerms : traits?.commonPhrases ?? [];
+  const avgChars = sources.length
+    ? Math.round(sources.reduce((sum, s) => sum + s.rawText.length, 0) / sources.length)
+    : 0;
+
+  return (
+    <div className="flex min-w-0 flex-col">
+      <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-[var(--border)] px-[22px]">
+        {editingName ? (
+          <form onSubmit={renameBrand} className="flex items-center gap-2">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={80}
+              autoFocus
+              className="h-7 rounded-[6px] border border-[var(--border-strong)] px-2 text-[14px] font-bold text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+            />
+            <Button type="submit" size="sm" disabled={busy === "rename"}>
               저장
             </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setEditingName(false)}>
+              취소
+            </Button>
           </form>
-        </CardContent>
-      </Card>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => setEditingName(true)}
+              className="text-[14px] font-bold tracking-[-.015em] text-[var(--foreground)] hover:text-[var(--accent)]"
+              title="이름 변경"
+            >
+              {name}
+            </button>
+            {style ? (
+              <>
+                <Badge variant="success">학습 완료 v{style.version}</Badge>
+                <span className="text-[11.5px] text-[var(--faint)]">
+                  마지막 학습 {new Date(style.updatedAt).toLocaleDateString("ko-KR")} · 원문{" "}
+                  {sources.length}편
+                </span>
+              </>
+            ) : (
+              <Badge variant="warning">미학습</Badge>
+            )}
+          </>
+        )}
+        <div className="flex-1" />
+        <Button type="button" size="sm" variant="outline" onClick={() => setShowSourceForm((v) => !v)}>
+          {showSourceForm ? "원문 추가 닫기" : "원문 추가"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="dark"
+          onClick={() => void learnStyle()}
+          disabled={busy === "learn" || sources.length === 0}
+        >
+          {busy === "learn" ? "학습 중…" : style ? "다시 학습" : "문체 학습"}
+        </Button>
+      </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>원문 등록</CardTitle>
-          <div className="flex rounded-lg border border-[var(--border)] p-0.5 text-xs">
-            <button
-              type="button"
-              className={`rounded-md px-3 py-1.5 ${sourceMode === "bulk" ? "bg-[var(--accent)] text-white" : "text-[color:var(--muted)]"}`}
-              onClick={() => setSourceMode("bulk")}
-            >
-              블로그 일괄
-            </button>
-            <button
-              type="button"
-              className={`rounded-md px-3 py-1.5 ${sourceMode === "url" ? "bg-[var(--accent)] text-white" : "text-[color:var(--muted)]"}`}
-              onClick={() => setSourceMode("url")}
-            >
-              URL
-            </button>
-            <button
-              type="button"
-              className={`rounded-md px-3 py-1.5 ${sourceMode === "text" ? "bg-[var(--accent)] text-white" : "text-[color:var(--muted)]"}`}
-              onClick={() => setSourceMode("text")}
-            >
-              붙여넣기
-            </button>
+      {error ? (
+        <div className="flex items-center justify-between gap-2 border-b border-[#F7E7E5] bg-[#F7E7E5] px-[22px] py-2 text-[12px] text-[#C2453C]">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError(null)} className="font-semibold">
+            닫기
+          </button>
+        </div>
+      ) : null}
+
+      {showSourceForm ? (
+        <div className="border-b border-[var(--border)] bg-white px-[22px] py-4">
+          <div className="mb-3 flex gap-[2px] rounded-[8px] bg-[var(--surface-2)] p-[3px]" style={{ width: "fit-content" }}>
+            {(
+              [
+                ["bulk", "블로그 일괄"],
+                ["url", "URL"],
+                ["text", "붙여넣기"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setSourceMode(id)}
+                className={
+                  sourceMode === id
+                    ? "flex h-7 items-center rounded-[6px] bg-white px-3 text-[12px] font-semibold text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]"
+                    : "flex h-7 items-center rounded-[6px] px-3 text-[12px] font-medium text-[#8A8A94]"
+                }
+              >
+                {label}
+              </button>
+            ))}
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+
           {sourceMode === "bulk" ? (
             <form onSubmit={bulkImport} className="space-y-3">
               <Label>
@@ -302,8 +393,8 @@ export function BrandWorkspace({
                   disabled={busy === "bulk"}
                 />
                 <span className="block text-xs font-normal text-[color:var(--muted)]">
-                  최신 공개글 최대 100개를 가져와 원문으로 저장하고, 말투·용어·제품·편집 습관을 심화 학습합니다.
-                  본인 운영 블로그의 공개글만 사용해 주세요.
+                  최신 공개글 최대 100개를 가져와 원문으로 저장하고, 말투·용어·제품·편집 습관을 심화
+                  학습합니다. 본인 운영 블로그의 공개글만 사용해 주세요.
                 </span>
               </Label>
               <Button type="submit" disabled={busy === "bulk" || !blogUrl.trim()}>
@@ -335,15 +426,12 @@ export function BrandWorkspace({
                     onChange={(e) => setSourceUrl(e.target.value)}
                     placeholder="https://blog.naver.com/... 또는 일반 블로그 URL"
                   />
-                  <span className="block text-xs font-normal text-[color:var(--muted)]">
-                    글 하나만 가져와 문체 학습용 원문으로 저장합니다.
-                  </span>
                 </Label>
               ) : (
                 <Label>
                   <span>기존 블로그 글 (문체 학습용)</span>
                   <Textarea
-                    rows={8}
+                    rows={6}
                     value={rawText}
                     onChange={(e) => setRawText(e.target.value)}
                     placeholder="테마 톤이 잘 드러나는 글을 붙여넣으세요 (20자 이상)"
@@ -361,168 +449,201 @@ export function BrandWorkspace({
               </Button>
             </form>
           )}
+        </div>
+      ) : null}
 
-          {sources.length === 0 ? (
-            <p className="text-sm text-[color:var(--muted)]">등록된 원문이 없습니다.</p>
-          ) : (
-            <ul className="space-y-3">
-              {sources.map((source) => (
-                <li key={source.id} className="rounded-lg border border-[var(--border)] p-3">
-                  {source.title ? (
-                    <p className="mb-1 text-sm font-medium text-[color:var(--foreground)]">{source.title}</p>
-                  ) : null}
-                  {source.sourceUrl ? (
-                    <a
-                      href={source.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mb-2 block truncate text-xs text-[color:var(--muted)] hover:underline"
-                    >
-                      {source.sourceUrl}
-                    </a>
-                  ) : null}
-                  <p className="whitespace-pre-wrap text-sm text-[color:var(--foreground)] line-clamp-4">{source.rawText}</p>
-                  <div className="mt-2 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy === `del-${source.id}`}
-                      onClick={() => removeSource(source.id)}
-                    >
-                      삭제
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>스타일 프로필</CardTitle>
-          <Button type="button" onClick={learnStyle} disabled={busy === "learn" || sources.length === 0}>
-            {busy === "learn" ? "학습 중…" : style ? "다시 학습" : "문체 학습"}
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {!style ? (
-            <p className="text-sm text-[color:var(--muted)]">아직 학습된 스타일이 없습니다. 원문을 추가한 뒤 학습하세요.</p>
-          ) : (
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-2">
-                <Badge>v{style.version}</Badge>
-                <span className="text-[color:var(--muted)]">
-                  {new Date(style.updatedAt).toLocaleString("ko-KR")}
-                </span>
-              </div>
-              <p className="whitespace-pre-wrap leading-6 text-[color:var(--foreground)]">{style.summaryText}</p>
-              <StyleTraitsView traits={style.traitsJson} />
-              <p className="text-xs text-[color:var(--muted)]">
-                학습이 끝나면 상단 메뉴의 <strong>새 글</strong>에서 이 테마 문체로 글을 만들 수 있습니다.
-              </p>
+      <div className="grid grid-cols-[1fr_320px] gap-4 p-[22px]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="rounded-[11px] border border-[var(--border)] bg-white p-[17px_18px]">
+            <div className="flex items-center">
+              <span className="text-[12.5px] font-bold text-[var(--foreground)]">학습된 문체 규칙</span>
+              <span className="ml-auto text-[11px] text-[var(--faint)]">체크를 끄면 생성에서 제외됩니다</span>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            {!style ? (
+              <p className="mt-3 text-[12px] text-[var(--muted)]">
+                문체 학습이 끝나면 이 테마의 규칙이 여기에 표시됩니다.
+              </p>
+            ) : (
+              <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+                {STYLE_RULE_KEYS.map((key) => {
+                  const active = isRuleActive(style.traitsJson, key);
+                  return (
+                    <label
+                      key={key}
+                      className="flex items-start gap-2.5 rounded-[9px] border border-[#EFEFF2] bg-[#FBFBFC] p-[11px_12px]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={active}
+                        disabled={ruleBusy === key}
+                        onChange={(e) => void toggleRule(key, e.target.checked)}
+                        className="mt-0.5 h-[15px] w-[15px] shrink-0 rounded-[4px] border-[var(--border-strong)]"
+                      />
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-[12px] font-semibold text-[var(--foreground)]">
+                          {ruleTitle(key)}
+                        </span>
+                        <span className="text-[10.5px] leading-[1.5] text-[var(--faint)]">
+                          {ruleDescription(key, style.traitsJson)}
+                        </span>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>머리말·꼬리말 템플릿</CardTitle>
-          <Link href={`/brands/${brandId}/templates`}>
-            <Button type="button" size="sm" variant="outline">
-              템플릿 관리
-            </Button>
-          </Link>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-[color:var(--muted)]">
-            자주 쓰는 인사말·맺음말을 템플릿으로 저장해 두고, 포스트 편집에서 선택 후 적용할 수 있습니다.
-          </p>
-        </CardContent>
-      </Card>
+          <div className="flex flex-col overflow-hidden rounded-[11px] border border-[var(--border)] bg-white">
+            <div className="flex h-10 shrink-0 items-center border-b border-[var(--border)] px-4">
+              <span className="text-[12.5px] font-bold text-[var(--foreground)]">학습 원문</span>
+              <span className="[font-variant-numeric:tabular-nums] ml-auto text-[11px] text-[var(--faint)]">
+                {sources.length}편{sources.length ? ` · 평균 ${avgChars.toLocaleString()}자` : ""}
+              </span>
+            </div>
+            {sources.length === 0 ? (
+              <p className="px-4 py-8 text-center text-[12px] text-[var(--muted)]">
+                등록된 원문이 없습니다.
+              </p>
+            ) : (
+              sources.map((s) => (
+                <div
+                  key={s.id}
+                  className="grid h-[46px] items-center gap-0 border-b border-[#F4F4F6] px-4 last:border-b-0 hover:bg-[var(--surface-2)]"
+                  style={{ gridTemplateColumns: "1fr 96px 74px 62px 44px" }}
+                >
+                  <span className="truncate pr-2.5 text-[12.5px] font-semibold text-[var(--foreground)]">
+                    {s.title || "(제목 없음)"}
+                  </span>
+                  <span className="truncate pr-2 text-[11px] text-[var(--faint)]">
+                    {sourceLabel(s.sourceUrl)}
+                  </span>
+                  <span className="[font-variant-numeric:tabular-nums] text-right text-[11.5px] text-[var(--muted)]">
+                    {s.rawText.length.toLocaleString()}
+                  </span>
+                  <span className="[font-variant-numeric:tabular-nums] text-right text-[11px] text-[var(--faint)]">
+                    {shortDate(s.createdAt)}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy === `del-${s.id}`}
+                    onClick={() => void removeSource(s.id)}
+                    className="justify-self-end text-[11px] font-medium text-[var(--faint)] hover:text-[#C2453C] disabled:opacity-40"
+                  >
+                    삭제
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>다음 단계</CardTitle>
-          {style ? (
-            <Link href={`/posts/new?brandId=${brandId}`}>
-              <Button type="button" size="sm">
-                새 글
-              </Button>
-            </Link>
+        <div className="flex flex-col gap-3.5">
+          <div className="rounded-[11px] border border-[var(--border)] bg-white p-4">
+            <span className="text-[12.5px] font-bold text-[var(--foreground)]">문체 지문</span>
+            {!traits ? (
+              <p className="mt-2 text-[12px] text-[var(--muted)]">학습 후 표시됩니다.</p>
+            ) : (
+              <div className="mt-3 flex flex-col gap-2.5">
+                {(
+                  [
+                    ["문장 길이", traits.sentenceLength],
+                    ["이모지 사용", traits.emojiUsage],
+                    ["줄바꿈 리듬", traits.lineBreakStyle],
+                    ["강조 방식", traits.emphasisStyle],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label} className="flex flex-col gap-[5px]">
+                    <div className="flex text-[11.5px]">
+                      <span className="text-[var(--muted)]">{label}</span>
+                      <span className="ml-auto max-w-[65%] truncate font-semibold text-[var(--foreground)]">
+                        {value}
+                      </span>
+                    </div>
+                    <div className="h-1 overflow-hidden rounded-full bg-[#EDEDF1]">
+                      <div
+                        className="h-full rounded-full bg-[var(--foreground)]"
+                        style={{ width: `${intensity(value)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {sampleQuote ? (
+            <div className="rounded-[11px] border border-[var(--border)] bg-white p-4">
+              <span className="text-[12.5px] font-bold text-[var(--foreground)]">
+                이 테마로 쓴 문장 예시
+              </span>
+              <p className="mt-2.5 rounded-[9px] border border-[#F0F0F3] bg-[#FBFBFC] p-3 text-[12.5px] leading-[1.8] text-[var(--muted)]">
+                {sampleQuote}
+              </p>
+              {chips.length ? (
+                <div className="mt-2.5 flex flex-wrap gap-[5px]">
+                  {chips.slice(0, 8).map((c) => (
+                    <span
+                      key={c}
+                      className="flex h-[21px] items-center rounded-[5px] bg-[var(--surface-2)] px-2 text-[10.5px] font-semibold text-[var(--muted)]"
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ) : null}
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {style ? (
-            <p className="text-sm text-[color:var(--muted)]">
-              문체 학습이 완료되었습니다. 새 글에서 이 테마를 선택해 글을 만드세요.
-            </p>
-          ) : (
-            <p className="text-sm text-amber-700">샘플 원문을 넣고 문체 학습을 마치면 글을 만들 수 있습니다.</p>
-          )}
-          {posts.length > 0 ? (
-            <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
-              {posts.map((post) => (
-                <li key={post.id} className="flex items-center justify-between px-3 py-2.5 text-sm">
-                  <Link href={`/posts/${post.id}`} className="font-medium text-[color:var(--foreground)] hover:underline">
-                    {post.title || post.keyword || "(제목 없음)"}
-                  </Link>
-                  <Badge>{postStatusLabel(post.status)}</Badge>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-[color:var(--muted)]">이 테마로 만든 글은 아직 없습니다.</p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function StyleTraitsView({ traits }: { traits: unknown }) {
-  const t = normalizeExtendedTraits(traits);
-  return (
-    <div className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[color:var(--foreground)] sm:grid-cols-2">
-      <Trait label="톤" value={t.tone} />
-      <Trait label="문장" value={t.sentenceLength} />
-      <Trait label="줄바꿈" value={t.lineBreakStyle} />
-      <Trait label="이모지" value={t.emojiUsage} />
-      <Trait label="자주 쓰는 이모지" value={t.frequentEmojis.join(" ") || "-"} />
-      <Trait label="강조" value={t.emphasisStyle} />
-      <Trait label="글자 크기" value={t.fontSizes.join(", ") || "-"} />
-      <div>
-        <p className="font-medium text-[color:var(--muted)]">강조색</p>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {t.colorPalette.map((c) => (
-            <span key={c} className="inline-flex items-center gap-1">
-              <span className="inline-block h-3.5 w-3.5 rounded-full border border-[var(--border)]" style={{ backgroundColor: c }} />
-              {c}
-            </span>
-          ))}
         </div>
       </div>
-      <Trait label="도입" value={t.openerStyle} />
-      <Trait label="마무리" value={t.closerStyle} />
-      {t.commonPhrases.length ? <Trait label="자주 쓰는 말" value={t.commonPhrases.join(" · ")} /> : null}
-      <Trait label="구성" value={t.structureNotes} />
-      {t.domainTerms?.length ? <Trait label="용어" value={t.domainTerms.join(" · ")} /> : null}
-      {t.productMentions?.length ? (
-        <Trait label="자주 등장 제품" value={t.productMentions.join(" · ")} />
-      ) : null}
-      {t.ctaPhrases?.length ? <Trait label="CTA" value={t.ctaPhrases.join(" · ")} /> : null}
-    </div>
-  );
-}
 
-function Trait({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="font-medium text-[color:var(--muted)]">{label}</p>
-      <p className="mt-0.5 leading-5 text-[color:var(--foreground)]">{value}</p>
+      <div className="px-[22px] pb-[22px]">
+        <div className="rounded-[11px] border border-[var(--border)] bg-white p-4">
+          <div className="flex items-center gap-2">
+            <span className="text-[12.5px] font-bold text-[var(--foreground)]">
+              이 테마로 만든 글
+            </span>
+            <span className="text-[11px] text-[var(--faint)]">{posts.length}개</span>
+            <div className="flex-1" />
+            <Link href={`/brands/${brandId}/templates`} className="text-[11.5px] text-[var(--faint)] hover:text-[var(--accent)]">
+              머리말·꼬리말 템플릿
+            </Link>
+            <NewCutLink brandId={brandId}>
+              <span className="cursor-pointer text-[11.5px] text-[var(--faint)] hover:text-[var(--accent)]">
+                New Cut 쇼츠
+              </span>
+            </NewCutLink>
+            <Button type="button" size="sm" variant="danger" onClick={() => void deleteBrand()} disabled={busy === "delete"}>
+              테마 삭제
+            </Button>
+            {style ? (
+              <Link href={`/posts/new?brandId=${brandId}`}>
+                <Button type="button" size="sm">
+                  새 글
+                </Button>
+              </Link>
+            ) : null}
+          </div>
+          {posts.length > 0 ? (
+            <div className="mt-3 divide-y divide-[var(--border)] rounded-[9px] border border-[var(--border)]">
+              {posts.map((post) => (
+                <Link
+                  key={post.id}
+                  href={`/posts/${post.id}`}
+                  className="flex items-center justify-between px-3 py-2.5 text-[12.5px] hover:bg-[var(--surface-2)]"
+                >
+                  <span className="truncate font-medium text-[var(--foreground)]">
+                    {post.title || post.keyword || "(제목 없음)"}
+                  </span>
+                  <Badge>{postStatusLabel(post.status)}</Badge>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-[12px] text-[var(--muted)]">이 테마로 만든 글은 아직 없습니다.</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

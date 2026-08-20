@@ -1,104 +1,122 @@
 import Link from "next/link";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PostsTable, type PostRow } from "@/components/studio/PostsTable";
 import { auth } from "@/lib/auth";
-import { postStatusLabel } from "@/lib/post-status";
+import { plainTextLength } from "@/lib/content";
 import { prisma } from "@/lib/prisma";
 
-export default async function PostsListPage() {
+const STATUS_IDS = ["collecting", "draft", "published", "archived"] as const;
+type StatusFilter = "all" | (typeof STATUS_IDS)[number];
+
+type Props = {
+  searchParams: Promise<{ status?: string; brandId?: string; sort?: string }>;
+};
+
+export default async function PostsListPage({ searchParams }: Props) {
+  const { status, brandId, sort } = await searchParams;
   const session = await auth();
   const userId = session!.user!.id;
 
-  let posts: Array<{
-    id: string;
-    title: string | null;
-    keyword: string | null;
-    status: string;
-    publishedUrl: string | null;
-    createdAt: Date;
-    brand: { name: string };
-  }> = [];
+  const statusFilter: StatusFilter = (STATUS_IDS as readonly string[]).includes(status ?? "")
+    ? (status as StatusFilter)
+    : "all";
+  const brandFilter = brandId || "all";
+  const sortKey = sort === "created" ? "created" : "recent";
+
+  let posts: PostRow[] = [];
+  const counts: Record<StatusFilter, number> = { all: 0, collecting: 0, draft: 0, published: 0, archived: 0 };
+  let brands: { id: string; name: string }[] = [];
   let dbError: string | null = null;
 
   try {
-    posts = await prisma.post.findMany({
-      where: { brand: { userId } },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      select: {
-        id: true,
-        title: true,
-        keyword: true,
-        status: true,
-        publishedUrl: true,
-        createdAt: true,
-        brand: { select: { name: true } },
-      },
-    });
+    const [rows, groups, brandRows] = await Promise.all([
+      prisma.post.findMany({
+        where: {
+          brand: { userId },
+          ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+          ...(brandFilter !== "all" ? { brandId: brandFilter } : {}),
+        },
+        orderBy: sortKey === "created" ? { createdAt: "desc" } : { updatedAt: "desc" },
+        take: 50,
+        select: {
+          id: true,
+          title: true,
+          keyword: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          body: true,
+          brand: { select: { id: true, name: true } },
+          _count: { select: { images: true } },
+        },
+      }),
+      prisma.post.groupBy({
+        by: ["status"],
+        where: { brand: { userId } },
+        _count: true,
+      }),
+      prisma.brand.findMany({
+        where: { userId },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    posts = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      keyword: r.keyword,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      brand: r.brand,
+      images: r._count.images,
+      chars: plainTextLength(r.body),
+    }));
+    brands = brandRows;
+
+    for (const g of groups) {
+      const key = g.status as StatusFilter;
+      if (key in counts) counts[key] = g._count;
+    }
+    counts.all = STATUS_IDS.reduce((sum, id) => sum + counts[id], 0);
   } catch {
     dbError = "DB에 연결하지 못했습니다. DATABASE_URL과 prisma migrate를 확인해 주세요.";
   }
 
-  return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-10">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
-            글 목록
-          </h1>
-          <p className="mt-2 text-sm text-[color:var(--muted)]">
-            최근에 만든 글을 열고 이어서 편집하세요.
-          </p>
-        </div>
-        <Link href="/posts/new">
-          <Button>새 글</Button>
-        </Link>
-      </div>
-
-      {dbError ? (
-        <p className="mt-8 rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+  if (dbError) {
+    return (
+      <main className="mx-auto w-full max-w-3xl px-6 py-10">
+        <p className="rounded-[8px] border border-[#F4EDD8] bg-[#F4EDD8] px-4 py-3 text-sm text-[#8A6410]">
           {dbError}
         </p>
-      ) : null}
+      </main>
+    );
+  }
 
-      {posts.length === 0 && !dbError ? (
-        <div className="mt-10 rounded-xl border border-dashed border-[var(--border)] bg-white px-4 py-10 text-center">
-          <p className="text-sm text-[color:var(--muted)]">아직 만든 글이 없습니다.</p>
-          <Link href="/posts/new" className="mt-4 inline-block">
-            <Button>새 글 만들기</Button>
-          </Link>
-        </div>
-      ) : (
-        <ul className="mt-8 divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] bg-white">
-          {posts.map((post) => (
-            <li
-              key={post.id}
-              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
-            >
-              <div className="min-w-0">
-                <Link
-                  href={`/posts/${post.id}`}
-                  className="font-semibold text-[color:var(--foreground)] hover:text-[var(--accent)]"
-                >
-                  {post.title || post.keyword || "(제목 없음)"}
-                </Link>
-                <p className="mt-0.5 text-xs text-[color:var(--muted)]">
-                  {post.brand.name}
-                  <span className="mx-1.5 text-[var(--border)]">·</span>
-                  {post.createdAt.toLocaleString("ko-KR")}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Badge>{postStatusLabel(post.status)}</Badge>
-                {post.status === "published" && !post.publishedUrl ? (
-                  <Badge className="border-amber-200 bg-amber-50 text-amber-800">URL 미기록</Badge>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </main>
+  if (counts.all === 0) {
+    return (
+      <main className="mx-auto w-full max-w-2xl px-6 py-16 text-center">
+        <p className="text-sm text-[var(--muted)]">아직 만든 글이 없습니다.</p>
+        <Link href="/posts/new" className="mt-4 inline-block">
+          <Button>새 글 만들기</Button>
+        </Link>
+      </main>
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      <PostsTable
+        posts={posts}
+        counts={counts}
+        brands={brands}
+        statusFilter={statusFilter}
+        brandFilter={brandFilter}
+        sort={sortKey}
+        total={counts.all}
+      />
+    </div>
   );
 }

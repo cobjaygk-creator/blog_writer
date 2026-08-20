@@ -1,6 +1,7 @@
 "use client";
 
-import { GripVertical } from "lucide-react";
+import Link from "next/link";
+import { FileText, GripVertical, Images } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -8,8 +9,6 @@ import { GenerationProgressModal } from "@/components/GenerationProgressModal";
 import { ImageUploadDropzone } from "@/components/ImageUploadDropzone";
 import { LearnedSupplementPanel } from "@/components/studio/LearnedSupplementPanel";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { BRAND_CAPTION_TONE } from "@/lib/caption-tones";
 import { USE_DEFAULT_THEME_ID } from "@/lib/default-theme";
@@ -20,6 +19,7 @@ import {
   runGenerationJobClient,
   type ClientJob,
 } from "@/lib/run-generation-job-client";
+import { TOPIC_LENGTH_PRESETS, type TopicLength } from "@/lib/topic-length";
 import { cn } from "@/lib/utils";
 
 type BrandOption = {
@@ -49,21 +49,35 @@ function formatBytes(n: number) {
   return `${(n / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+function formatEstimate(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) return `약 ${s}초`;
+  return `약 ${m}분${s > 0 ? ` ${s}초` : ""}`;
+}
+
+const LENGTH_OPTIONS: TopicLength[] = ["short", "medium", "long"];
+
 /** Studio create: make a post shell then open the editor (no full wizard). */
 export function StudioQuickCreate({
   brands,
   initialBrandId,
+  remainingPosts,
+  estimatedSeconds,
 }: {
   brands: BrandOption[];
   initialBrandId?: string | null;
+  remainingPosts?: number | null;
+  estimatedSeconds?: number | null;
 }) {
   const router = useRouter();
-  const [mediaPath, setMediaPath] = useState<MediaPath>("with_media");
+  const [mediaPath, setMediaPath] = useState<MediaPath | null>(null);
   const [brandId, setBrandId] = useState(
     initialBrandId || brands[0]?.id || USE_DEFAULT_THEME_ID,
   );
   const [keyword, setKeyword] = useState("");
   const [notes, setNotes] = useState("");
+  const [length, setLength] = useState<TopicLength>("medium");
   const [postId, setPostId] = useState<string | null>(null);
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [videos, setVideos] = useState<LocalVideo[]>([]);
@@ -81,7 +95,8 @@ export function StudioQuickCreate({
   const hasMedia = images.length > 0 || videos.length > 0;
   const keywordReady = keyword.trim().length > 0;
   const generateOpen = busy === "generate";
-  const generateRange = phaseProgressRange(generatePhase, "generate");
+  const generateKind = withMedia ? "generate" : "generate_topic";
+  const generateRange = phaseProgressRange(generatePhase, generateKind);
 
   async function ensurePost(): Promise<string> {
     if (postId) return postId;
@@ -322,9 +337,16 @@ export function StudioQuickCreate({
     }
   }
 
-  async function createTopicAndOpen() {
-    setBusy("create");
+  async function createTopicAndGenerate() {
+    if (!keyword.trim()) {
+      setError("주요 키워드(제목)를 입력해 주세요.");
+      return;
+    }
+    setBusy("generate");
     setError(null);
+    setGenerateComplete(false);
+    setGeneratePhase("research");
+    setGeneratePhaseLabel(phaseStatusLabel("research", "generate_topic"));
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
@@ -332,7 +354,7 @@ export function StudioQuickCreate({
         body: JSON.stringify({
           brandId: brandId || USE_DEFAULT_THEME_ID,
           mode: "topic",
-          keyword: keyword.trim() || undefined,
+          keyword: keyword.trim(),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -342,10 +364,32 @@ export function StudioQuickCreate({
       if (!res.ok || !data.post?.id) {
         throw new Error(data.error || "글을 만들지 못했습니다.");
       }
-      router.push(`/posts/${data.post.id}`);
+      const id = data.post.id;
+      setPostId(id);
+
+      await runGenerationJobClient({
+        postId: id,
+        body: {
+          kind: "generate_topic",
+          topic: keyword.trim(),
+          length,
+          imageCount: TOPIC_LENGTH_PRESETS[length].sectionCount,
+          imageSource: "unsplash",
+          replaceImages: true,
+        },
+        onPhase: (job: ClientJob) => {
+          setGeneratePhase(job.phase);
+          setGeneratePhaseLabel(phaseStatusLabel(job.phase, job.kind));
+        },
+      });
+      setGenerateComplete(true);
+      router.push(`/posts/${id}`);
+      router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "글을 만들지 못했습니다.");
+      setError(e instanceof Error ? e.message : "초안 생성에 실패했습니다.");
       setBusy(null);
+      setGenerateComplete(false);
+      setGeneratePhaseLabel(null);
     }
   }
 
@@ -397,7 +441,7 @@ export function StudioQuickCreate({
           keyword: keyword.trim(),
           productHighlights: notes.trim() || null,
           captionTone: BRAND_CAPTION_TONE,
-          length: "medium",
+          length,
           useLearnedSupplement,
           excludedSupplementPoints:
             useLearnedSupplement && excludedSupplementPoints.length
@@ -421,7 +465,7 @@ export function StudioQuickCreate({
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-6 py-8">
+    <div className="flex h-full min-h-0 flex-col">
       <GenerationProgressModal
         open={generateOpen}
         title="초안 생성 중"
@@ -429,330 +473,519 @@ export function StudioQuickCreate({
         target={generateRange.floor}
         ceiling={generateRange.ceiling}
         complete={generateComplete}
-        detail="테마·키워드·참고 내용·사진 프롬프트를 반영해 초안을 만들고 있습니다."
+        detail={
+          withMedia
+            ? "테마·키워드·참고 내용·사진 프롬프트를 반영해 초안을 만들고 있습니다."
+            : "키워드·테마를 바탕으로 포스트 초안을 만들고 있습니다."
+        }
       />
 
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">만들기</h1>
-        <p className="mt-1 text-sm text-[color:var(--muted)]">
-          재료가 있는지부터 고른 뒤, 편집기에서 이어갑니다.
-        </p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
+      {mediaPath === null ? (
+        <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-6 p-6">
+          <div>
+            <h1 className="text-[19px] font-bold text-[var(--foreground)]">어떻게 시작할까요?</h1>
+            <p className="mt-1 text-[12.5px] text-[var(--muted)]">
+              사진·영상 유무에 따라 다음 단계가 달라져요.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setMediaPath("with_media")}
+              className="flex flex-col items-start gap-3 rounded-[12px] border border-[var(--border)] bg-white p-5 text-left transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[var(--accent-soft)] text-[var(--accent)]">
+                <Images className="h-[18px] w-[18px]" strokeWidth={1.8} />
+              </span>
+              <span className="text-[14px] font-bold text-[var(--foreground)]">사진이나 영상이 있어요</span>
+              <span className="text-[11.5px] leading-[1.6] text-[var(--muted)]">
+                키워드·참고 내용을 적고 사진 프롬프트를 준비한 뒤 초안을 만듭니다.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMediaPath("without_media")}
+              className="flex flex-col items-start gap-3 rounded-[12px] border border-[var(--border)] bg-white p-5 text-left transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[var(--surface-2)] text-[var(--muted)]">
+                <FileText className="h-[18px] w-[18px]" strokeWidth={1.8} />
+              </span>
+              <span className="text-[14px] font-bold text-[var(--foreground)]">사진이나 영상이 없어요</span>
+              <span className="text-[11.5px] leading-[1.6] text-[var(--muted)]">
+                키워드만으로 블로그 포스트를 쓰고, 필요하면 이미지를 찾아 붙입니다.
+              </span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+      <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--border)] bg-white px-5">
         <button
           type="button"
-          onClick={() => setMediaPath("with_media")}
-          className={cn(
-            "rounded-xl border px-4 py-4 text-left transition-colors",
-            withMedia
-              ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-              : "border-[var(--border)] bg-white hover:bg-[var(--background)]",
-          )}
+          onClick={() => setMediaPath(null)}
+          className="text-[13.5px] font-bold text-[var(--foreground)] hover:text-[var(--accent)]"
+          title="처음부터 다시 선택"
         >
-          <p className="text-sm font-semibold">사진이나 영상이 있어요</p>
-          <p className="mt-1.5 text-xs leading-relaxed text-[color:var(--muted)]">
-            키워드·참고 내용을 적고 미디어·사진 프롬프트를 준비한 뒤 초안을 만듭니다.
-          </p>
+          글 만들기
         </button>
-        <button
-          type="button"
-          onClick={() => setMediaPath("without_media")}
-          className={cn(
-            "rounded-xl border px-4 py-4 text-left transition-colors",
-            !withMedia
-              ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-              : "border-[var(--border)] bg-white hover:bg-[var(--background)]",
-          )}
-        >
-          <p className="text-sm font-semibold">사진이나 영상이 없어요</p>
-          <p className="mt-1.5 text-xs leading-relaxed text-[color:var(--muted)]">
-            주제만으로 정보글을 쓰고, 필요하면 이미지를 찾아 붙입니다.
-          </p>
-        </button>
+        <div className="ml-auto flex gap-[3px] rounded-[9px] bg-[var(--surface-2)] p-[3px]">
+          <button
+            type="button"
+            onClick={() => setMediaPath("with_media")}
+            className={cn(
+              "flex h-[29px] items-center justify-center rounded-[7px] px-3.5 text-[12px] font-semibold",
+              withMedia ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]" : "text-[#8A8A94]",
+            )}
+          >
+            사진 있음
+          </button>
+          <button
+            type="button"
+            onClick={() => setMediaPath("without_media")}
+            className={cn(
+              "flex h-[29px] items-center justify-center rounded-[7px] px-3.5 text-[12px] font-semibold",
+              !withMedia ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]" : "text-[#8A8A94]",
+            )}
+          >
+            글만
+          </button>
+        </div>
       </div>
-
-      <Label>
-        <span>테마</span>
-        <select
-          className="mt-1.5 flex h-10 w-full rounded-md border border-[var(--border)] bg-white px-3 text-sm"
-          value={brandId}
-          onChange={(e) => setBrandId(e.target.value)}
-          disabled={Boolean(postId)}
-        >
-          <option value={USE_DEFAULT_THEME_ID}>기본 테마</option>
-          {brands.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-              {b.learned ? "" : " (미학습)"}
-            </option>
-          ))}
-        </select>
-      </Label>
 
       {!withMedia ? (
-        <div className="max-w-xl space-y-4">
-          <Label>
-            <span>주요 키워드</span>
-            <Input
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="예: 현재 주가가 내리는 이유"
-              maxLength={120}
-            />
-          </Label>
+        <div className="mx-auto w-full max-w-xl flex-1 space-y-4 p-6">
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">테마</span>
+            <div className="flex flex-wrap gap-[7px]">
+              <BrandChip
+                label="기본 테마"
+                selected={brandId === USE_DEFAULT_THEME_ID}
+                disabled={Boolean(postId)}
+                onClick={() => setBrandId(USE_DEFAULT_THEME_ID)}
+              />
+              {brands.map((b) => (
+                <BrandChip
+                  key={b.id}
+                  label={b.name}
+                  learned={b.learned}
+                  selected={brandId === b.id}
+                  disabled={Boolean(postId)}
+                  onClick={() => setBrandId(b.id)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">주요 키워드</span>
+            <div className="flex h-11 items-center gap-2.5 rounded-[10px] border border-[var(--border)] bg-white px-3.5 focus-within:border-[#16161A] focus-within:shadow-[0_0_0_3px_rgba(22,22,26,.06)]">
+              <input
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="예: 현재 주가가 내리는 이유"
+                maxLength={120}
+                className="min-w-0 flex-1 border-0 bg-transparent text-[15px] font-semibold text-[var(--foreground)] outline-none placeholder:font-normal placeholder:text-[var(--hint)]"
+              />
+              <span className="[font-variant-numeric:tabular-nums] shrink-0 text-[11px] text-[var(--hint)]">
+                {keyword.length} / 120
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">글 길이</span>
+            <div className="flex flex-wrap gap-[7px]">
+              {LENGTH_OPTIONS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setLength(id)}
+                  className={cn(
+                    "flex h-8 items-center rounded-[8px] border px-3 text-[12.5px] font-semibold transition-colors",
+                    length === id
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                      : "border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--border-strong)]",
+                  )}
+                >
+                  {TOPIC_LENGTH_PRESETS[id].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {error ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p className="rounded-[8px] border border-[#F7E7E5] bg-[#F7E7E5] px-3 py-2 text-[12.5px] text-[#C2453C]">
               {error}
             </p>
           ) : null}
           <Button
             type="button"
+            size="lg"
             className="w-full"
-            disabled={busy !== null}
-            onClick={() => void createTopicAndOpen()}
+            disabled={busy !== null || !keyword.trim()}
+            onClick={() => void createTopicAndGenerate()}
           >
-            {busy ? "문서 여는 중…" : "편집기에서 이어가기"}
+            {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
           </Button>
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-          <div className="space-y-4">
-            <Label>
-              <span>주요 키워드 (제목)</span>
-              <Input
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                placeholder="예: 쏘렌토 MQ4 고토 루프박스"
-                maxLength={120}
-              />
-              <span className="mt-1 block text-xs font-normal text-[color:var(--muted)]">
-                이미지 등록 전에 반드시 입력해야 합니다.
-              </span>
-            </Label>
-
-            <Label>
-              <span>생성에 참고할 내용</span>
-              <Textarea
-                rows={4}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="제품 특장점, 생성 시 필요한 키워드나 문장을 입력해 주세요."
-                maxLength={2000}
-              />
-            </Label>
-
-            {images.length > 0 ? (
-              <LearnedSupplementPanel
-                postId={postId}
-                keyword={keyword}
-                productHighlights={notes}
-                imagePrompts={images.map((img) => img.prompt || "")}
-                enabled={useLearnedSupplement}
-                onEnabledChange={setUseLearnedSupplement}
-                excludedPoints={excludedSupplementPoints}
-                onExcludedChange={setExcludedSupplementPoints}
-              />
-            ) : null}
-
-            <div>
-              <ImageUploadDropzone
-                disabled={busy === "upload" || !keywordReady}
-                label="이미지 등록"
-                onFiles={(files) => void handleMixedFiles(files)}
-              />
-              {!keywordReady ? (
-                <p className="mt-1.5 text-xs text-amber-700">
-                  주요 키워드(제목)를 입력하면 이미지를 등록할 수 있어요.
-                </p>
-              ) : null}
-              <label
-                className={cn(
-                  "mt-2 flex items-center justify-center rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-xs",
-                  keywordReady
-                    ? "cursor-pointer text-[color:var(--muted)] hover:bg-[var(--background)]"
-                    : "cursor-not-allowed text-[color:var(--muted)] opacity-50",
-                )}
-              >
-                영상 파일 추가 (목록에만 표시 · 쇼츠는 New Cut)
-                <input
-                  type="file"
-                  accept="video/*"
-                  multiple
-                  className="hidden"
-                  disabled={busy === "upload" || !keywordReady}
-                  onChange={(e) => {
-                    const files = e.target.files ? [...e.target.files] : [];
-                    if (files.length) addVideos(files);
-                    e.target.value = "";
-                  }}
+        <div className="grid min-h-0 flex-1 grid-cols-[1fr_340px]">
+          <div className="flex min-w-0 flex-col gap-[18px] overflow-y-auto p-[24px_26px]">
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">01 · 테마</span>
+              <div className="flex flex-wrap gap-[7px]">
+                <BrandChip
+                  label="기본 테마"
+                  selected={brandId === USE_DEFAULT_THEME_ID}
+                  disabled={Boolean(postId)}
+                  onClick={() => setBrandId(USE_DEFAULT_THEME_ID)}
                 />
-              </label>
+                {brands.map((b) => (
+                  <BrandChip
+                    key={b.id}
+                    label={b.name}
+                    learned={b.learned}
+                    selected={brandId === b.id}
+                    disabled={Boolean(postId)}
+                    onClick={() => setBrandId(b.id)}
+                  />
+                ))}
+                <Link
+                  href="/brands/new"
+                  className="flex h-8 items-center rounded-[8px] border border-dashed border-[var(--border-strong)] px-3 text-[12.5px] font-semibold text-[#8A8A94] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                >
+                  + 테마 추가
+                </Link>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">02 · 키워드 (제목)</span>
+              <div className="flex h-11 items-center gap-2.5 rounded-[10px] border border-[var(--border)] bg-white px-3.5 focus-within:border-[#16161A] focus-within:shadow-[0_0_0_3px_rgba(22,22,26,.06)]">
+                <input
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  placeholder="예: 쏘렌토 MQ4 고토 루프박스"
+                  maxLength={120}
+                  className="min-w-0 flex-1 border-0 bg-transparent text-[15px] font-semibold text-[var(--foreground)] outline-none placeholder:font-normal placeholder:text-[var(--hint)]"
+                />
+                <span className="[font-variant-numeric:tabular-nums] shrink-0 text-[11px] text-[var(--hint)]">
+                  {keyword.length} / 120
+                </span>
+              </div>
+              <span className="text-[11px] text-[var(--faint)]">이미지 등록 전에 반드시 입력해야 합니다.</span>
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">03 · 사진</span>
+                <span className="text-[11px] text-[var(--hint)]">
+                  순서대로 본문에 배치됩니다{images.length > 1 ? " · 드래그로 정렬" : ""}
+                </span>
+                <span className="[font-variant-numeric:tabular-nums] ml-auto text-[11px] font-semibold text-[var(--muted)]">
+                  {images.length + videos.length}
+                </span>
+              </div>
+
+              {!hasMedia ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-[11px] border border-dashed border-[var(--border-strong)] bg-white px-4 py-10 text-center">
+                  <p className="text-[13px] font-semibold text-[var(--foreground)]">
+                    등록된 미디어가 여기에 표시됩니다
+                  </p>
+                  <p className="text-[11.5px] text-[var(--muted)]">
+                    키워드 입력 후 이미지를 올리면 오른쪽에서 프롬프트를 수정할 수 있어요
+                  </p>
+                  <div className="w-full max-w-xs">
+                    <ImageUploadDropzone
+                      disabled={busy === "upload" || !keywordReady}
+                      label=""
+                      onFiles={(files) => void handleMixedFiles(files)}
+                    />
+                  </div>
+                  {!keywordReady ? (
+                    <p className="text-[11px] text-[#8A6410]">
+                      주요 키워드(제목)를 입력하면 이미지를 등록할 수 있어요.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {images.map((img, i) => (
+                      <div
+                        key={img.id}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (dragId) void moveImage(dragId, img.id);
+                          setDragId(null);
+                        }}
+                        className={cn(
+                          "flex flex-col overflow-hidden rounded-[10px] border bg-white",
+                          dragId === img.id && "opacity-50",
+                          dragId && dragId !== img.id ? "border-[var(--accent)]" : "border-[var(--border)]",
+                        )}
+                      >
+                        <div
+                          className="group relative h-[92px] shrink-0 cursor-grab bg-[var(--surface-2)] active:cursor-grabbing"
+                          draggable={busy === null}
+                          onDragStart={() => setDragId(img.id)}
+                          onDragEnd={() => setDragId(null)}
+                          title="드래그하여 순서 변경"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={img.imageUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                            draggable={false}
+                          />
+                          <span className="[font-variant-numeric:tabular-nums] absolute left-1.5 top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] bg-[rgba(22,22,26,.78)] text-[10px] font-bold text-white">
+                            {i + 1}
+                          </span>
+                          <GripVertical className="absolute right-1.5 top-1.5 h-3.5 w-3.5 text-white/70 opacity-0 group-hover:opacity-100" />
+                        </div>
+                        <div className="flex flex-col gap-0.5 border-t border-[#F0F0F3] p-2">
+                          <span className="text-[10px] font-bold tracking-[.02em] text-[var(--accent)]">
+                            AI 캡션
+                          </span>
+                          <textarea
+                            value={img.prompt}
+                            onChange={(e) => updateImagePrompt(img.id, e.target.value)}
+                            placeholder="장면 키워드 (자동 초안 후 수정 가능)"
+                            rows={2}
+                            maxLength={2000}
+                            className="resize-none border-0 bg-transparent text-[11px] leading-[1.4] text-[var(--muted)] outline-none placeholder:text-[var(--hint)]"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {videos.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      {videos.map((vid) => (
+                        <div
+                          key={vid.id}
+                          className="flex items-center gap-2.5 rounded-[8px] border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] px-2.5 py-1.5"
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-[#E4E4E9] text-[9px] font-bold text-[#6B6B75]">
+                            VIDEO
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[11.5px] font-medium text-[var(--foreground)]">
+                              {vid.name}
+                            </p>
+                            <p className="text-[10.5px] text-[var(--faint)]">
+                              {vid.sizeLabel} · 쇼츠는 New Cut에서
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="shrink-0 text-[11px] text-[var(--faint)] hover:text-[#C2453C]"
+                            onClick={() => setVideos((prev) => prev.filter((v) => v.id !== vid.id))}
+                          >
+                            제거
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="w-[220px]">
+                      <ImageUploadDropzone
+                        disabled={busy === "upload" || !keywordReady}
+                        label=""
+                        onFiles={(files) => void handleMixedFiles(files)}
+                      />
+                    </div>
+                    <label
+                      className={cn(
+                        "flex h-[36px] items-center rounded-[8px] border border-[var(--border)] bg-white px-3 text-[11.5px] font-medium",
+                        keywordReady
+                          ? "cursor-pointer text-[var(--muted)] hover:border-[var(--border-strong)]"
+                          : "cursor-not-allowed text-[var(--hint)]",
+                      )}
+                    >
+                      영상 추가
+                      <input
+                        type="file"
+                        accept="video/*"
+                        multiple
+                        className="hidden"
+                        disabled={busy === "upload" || !keywordReady}
+                        onChange={(e) => {
+                          const files = e.target.files ? [...e.target.files] : [];
+                          if (files.length) addVideos(files);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    {postId ? (
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        className="text-[11.5px] font-medium text-[var(--accent)] hover:underline disabled:opacity-40"
+                        onClick={() => {
+                          void (async () => {
+                            setBusy("upload");
+                            setError(null);
+                            try {
+                              const drafted = await applyDraftPrompts(postId, images);
+                              setImages(drafted);
+                            } catch (e) {
+                              setError(
+                                e instanceof Error
+                                  ? e.message
+                                  : "프롬프트 초안을 다시 만들지 못했습니다.",
+                              );
+                            } finally {
+                              setBusy(null);
+                            }
+                          })();
+                        }}
+                      >
+                        프롬프트 다시 만들기
+                      </button>
+                    ) : null}
+                  </div>
+                </>
+              )}
             </div>
 
             {error ? (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p className="rounded-[8px] border border-[#F7E7E5] bg-[#F7E7E5] px-3 py-2 text-[12.5px] text-[#C2453C]">
                 {error}
               </p>
             ) : null}
           </div>
 
-          <div className="min-h-[20rem] rounded-2xl border border-[var(--border)] bg-white p-4 shadow-sm">
-            {!hasMedia ? (
-              <div className="flex h-full min-h-[18rem] flex-col items-center justify-center px-4 text-center">
-                <p className="text-sm font-medium text-[color:var(--foreground)]">
-                  등록된 미디어가 여기에 표시됩니다
-                </p>
-                <p className="mt-2 text-xs text-[color:var(--muted)]">
-                  키워드 입력 후 이미지를 올리면, 오른쪽에 사진 프롬프트를 수정할 수 있어요.
-                </p>
-              </div>
-            ) : (
-              <div className="flex h-full min-h-[18rem] flex-col gap-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold">등록된 미디어</p>
-                    <p className="mt-0.5 text-xs text-[color:var(--muted)]">
-                      이미지 {images.length} · 영상 {videos.length}
-                      {images.length > 1 ? " · 드래그로 순서 변경" : ""}
-                    </p>
-                  </div>
-                  {images.length > 0 && postId ? (
+          <div className="flex min-h-0 flex-col border-l border-[var(--border)] bg-white">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-[18px] pb-0">
+              <div className="flex flex-col gap-2">
+                <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">분량</span>
+                <div className="flex gap-1.5">
+                  {LENGTH_OPTIONS.map((id) => (
                     <button
+                      key={id}
                       type="button"
-                      disabled={busy !== null}
-                      className="shrink-0 text-xs font-medium text-[var(--accent)] hover:underline disabled:opacity-40"
-                      onClick={() => {
-                        void (async () => {
-                          setBusy("upload");
-                          setError(null);
-                          try {
-                            const drafted = await applyDraftPrompts(postId, images);
-                            setImages(drafted);
-                          } catch (e) {
-                            setError(
-                              e instanceof Error
-                                ? e.message
-                                : "프롬프트 초안을 다시 만들지 못했습니다.",
-                            );
-                          } finally {
-                            setBusy(null);
-                          }
-                        })();
-                      }}
-                    >
-                      프롬프트 다시 만들기
-                    </button>
-                  ) : null}
-                </div>
-
-                <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-                  {images.map((img, i) => (
-                    <li
-                      key={img.id}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        if (dragId) void moveImage(dragId, img.id);
-                        setDragId(null);
-                      }}
+                      onClick={() => setLength(id)}
                       className={cn(
-                        "rounded-lg border border-[var(--border)] bg-white p-2",
-                        dragId === img.id && "opacity-50",
-                        dragId && dragId !== img.id && "border-[var(--accent)]",
+                        "flex h-[30px] flex-1 items-center justify-center rounded-[8px] border text-[12px] font-semibold",
+                        length === id
+                          ? "border-[#16161A] bg-[#16161A] text-white"
+                          : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--border-strong)]",
                       )}
                     >
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          draggable={busy === null}
-                          onDragStart={() => setDragId(img.id)}
-                          onDragEnd={() => setDragId(null)}
-                          className="mt-6 shrink-0 cursor-grab text-[color:var(--muted)] active:cursor-grabbing"
-                          title="드래그하여 순서 변경"
-                          aria-label="순서 변경"
-                        >
-                          <GripVertical className="h-4 w-4" />
-                        </button>
-                        <div className="flex w-16 shrink-0 flex-col items-stretch gap-1">
-                          <p className="text-center text-[11px] font-medium leading-tight">
-                            이미지 {i + 1}
-                          </p>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={img.imageUrl}
-                            alt=""
-                            className="h-16 w-16 rounded-md object-cover"
-                            draggable={false}
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <label className="text-[11px] font-medium text-[color:var(--muted)]">
-                            사진 프롬프트
-                            <Textarea
-                              rows={3}
-                              value={img.prompt}
-                              onChange={(e) => updateImagePrompt(img.id, e.target.value)}
-                              placeholder="시공 순서·장면 키워드 (자동 초안 후 수정 가능)"
-                              className="mt-1 text-xs"
-                              maxLength={2000}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    </li>
+                      {TOPIC_LENGTH_PRESETS[id].label}
+                    </button>
                   ))}
-                  {videos.map((vid) => (
-                    <li
-                      key={vid.id}
-                      className="flex gap-3 rounded-lg border border-dashed border-[var(--border)] bg-[var(--background)] p-2"
-                    >
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-zinc-200 text-[10px] font-medium text-zinc-600">
-                        VIDEO
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium">{vid.name}</p>
-                        <p className="mt-0.5 text-[11px] text-[color:var(--muted)]">
-                          {vid.sizeLabel} · 쇼츠는 New Cut에서
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-[11px] text-[color:var(--muted)] hover:text-red-600"
-                        onClick={() =>
-                          setVideos((prev) => prev.filter((v) => v.id !== vid.id))
-                        }
-                      >
-                        제거
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    type="button"
-                    className="flex-1"
-                    disabled={busy !== null}
-                    onClick={() => void finishWithMedia(true)}
-                  >
-                    {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    disabled={busy !== null}
-                    onClick={() => void finishWithMedia(false)}
-                  >
-                    편집기만 열기
-                  </Button>
                 </div>
+                <span className="[font-variant-numeric:tabular-nums] text-[10.5px] text-[var(--hint)]">
+                  {TOPIC_LENGTH_PRESETS[length].hint}
+                </span>
               </div>
-            )}
+
+              <div className="flex flex-col gap-2">
+                <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">참고 메모</span>
+                <Textarea
+                  rows={4}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="제품 특장점, 생성 시 필요한 키워드나 문장을 입력해 주세요."
+                  maxLength={2000}
+                  className="text-[12px]"
+                />
+              </div>
+
+              {images.length > 0 ? (
+                <LearnedSupplementPanel
+                  postId={postId}
+                  keyword={keyword}
+                  productHighlights={notes}
+                  imagePrompts={images.map((img) => img.prompt || "")}
+                  enabled={useLearnedSupplement}
+                  onEnabledChange={setUseLearnedSupplement}
+                  excludedPoints={excludedSupplementPoints}
+                  onExcludedChange={setExcludedSupplementPoints}
+                />
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-2 border-t border-[var(--border)] p-[14px_18px]">
+              <div className="flex items-center text-[11.5px]">
+                <span className="text-[var(--muted)]">예상 소요</span>
+                <span className="[font-variant-numeric:tabular-nums] ml-auto font-semibold text-[var(--foreground)]">
+                  {estimatedSeconds ? formatEstimate(estimatedSeconds) : "정보 없음"}
+                </span>
+              </div>
+              <div className="flex items-center text-[11.5px]">
+                <span className="text-[var(--muted)]">남은 생성</span>
+                <span className="[font-variant-numeric:tabular-nums] ml-auto font-semibold text-[var(--foreground)]">
+                  {remainingPosts == null ? "무제한" : `${remainingPosts}회`}
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="lg"
+                className="mt-1 w-full"
+                disabled={busy !== null || !hasMedia}
+                onClick={() => void finishWithMedia(true)}
+              >
+                {busy === "generate" ? "초안 생성 중…" : "초안 생성하기"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={busy !== null}
+                onClick={() => void finishWithMedia(false)}
+              >
+                편집기만 열기
+              </Button>
+              <p className="text-center text-[10.5px] text-[var(--hint)]">
+                생성 중에도 다른 화면을 쓸 수 있어요
+              </p>
+            </div>
           </div>
         </div>
       )}
+        </>
+      )}
     </div>
+  );
+}
+
+function BrandChip({
+  label,
+  selected,
+  disabled,
+  learned,
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  learned?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex h-8 items-center gap-1.5 rounded-[8px] border px-3 text-[12.5px] font-semibold disabled:cursor-not-allowed disabled:opacity-60",
+        selected
+          ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+          : "border-[var(--border)] bg-white text-[#3A3A44] hover:border-[var(--border-strong)]",
+      )}
+    >
+      {label}
+      {learned === false ? (
+        <span className="text-[10px] font-bold text-[#8A6410]">미학습</span>
+      ) : null}
+    </button>
   );
 }

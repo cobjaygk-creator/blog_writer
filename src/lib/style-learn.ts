@@ -92,6 +92,7 @@ export async function runStyleLearnForBrand(brandId: string) {
           summaryText: learned.summaryText,
           sampleAnchors: learned.sampleAnchors,
           traitsJson,
+          rawTraitsJson: traitsJson,
           version: existing.version + 1,
         },
       })
@@ -101,6 +102,7 @@ export async function runStyleLearnForBrand(brandId: string) {
           summaryText: learned.summaryText,
           sampleAnchors: learned.sampleAnchors,
           traitsJson,
+          rawTraitsJson: traitsJson,
         },
       });
 

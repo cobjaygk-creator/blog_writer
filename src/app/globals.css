@@ -1,28 +1,54 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f7f8;
-  --foreground: rgba(0, 0, 0, 0.85);
-  --surface: #ffffff;
-  --muted: rgba(0, 0, 0, 0.55);
-  --border: #efeff0;
-  --accent: #5e56f0;
-  --accent-hover: #4e40c9;
-  --accent-soft: #5e56f01a;
-  --radius-control: 10px;
+  --background: #F3F3F5;
+  --surface: #FFFFFF;
+  --surface-2: #FBFBFC;
+  --border: #E8E8EC;
+  --border-strong: #E0E0E6;
+  --foreground: #16161A;
+  --muted: #6B6B75;
+  --faint: #9C9CA6;
+  --hint: #B4B4BE;
+  --accent: #4B3BFF;
+  --accent-hover: #3B2CE0;
+  --accent-soft: #EFEDFF;
+  --radius-control: 8px;
+  --radius-card: 11px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-hint: var(--hint);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
   --font-sans: var(--font-sans-app);
   --font-mono: var(--font-geist-mono);
+}
+
+/* Editor-only dark mode — scoped via [data-theme="dark"] on the editor's own
+   wrapper, never on :root, so the rest of the app stays light. */
+[data-theme="dark"] {
+  --background: #0c0c10;
+  --surface: #141419;
+  --surface-2: #1a1a21;
+  --border: #26262f;
+  --border-strong: #332c52;
+  --foreground: #f2f2f5;
+  --muted: #8b8b98;
+  --faint: #63636f;
+  --hint: #63636f;
+  --accent: #8b7cff;
+  --accent-hover: #7a68f5;
+  --accent-soft: #1c1936;
 }
 
 body {

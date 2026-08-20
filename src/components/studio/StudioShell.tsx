@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
 import {
   Clapperboard,
-  FileText,
   FolderOpen,
   Home,
   LogOut,
@@ -22,7 +22,7 @@ type RailItem = {
   id: string;
   href: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   match: (pathname: string) => boolean;
   external?: boolean;
 };
@@ -58,6 +58,98 @@ const RAIL: RailItem[] = [
   },
 ];
 
+function screenTitle(pathname: string): string {
+  if (pathname === "/dashboard" || pathname === "/") return "홈";
+  if (pathname.startsWith("/posts/new")) return "새 글";
+  if (pathname.startsWith("/posts")) return "프로젝트";
+  if (pathname.startsWith("/brands")) return "테마";
+  if (pathname.startsWith("/billing")) return "요금 · 사용량";
+  if (pathname.startsWith("/admin")) return "관리자";
+  return "Ditodio Studio";
+}
+
+function initialsFromEmail(email?: string | null) {
+  if (!email) return "U";
+  const local = email.split("@")[0] || email;
+  return local.slice(0, 2).toUpperCase();
+}
+
+function AccountMenu({
+  email,
+  planLabel,
+  isAdmin,
+}: {
+  email?: string | null;
+  planLabel?: string | null;
+  isAdmin?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative flex flex-col items-center gap-[5px] pb-1.5 pt-2.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={email || "계정"}
+        aria-expanded={open}
+        className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-[#16161A] text-[10px] font-bold text-white"
+      >
+        {initialsFromEmail(email)}
+      </button>
+      {planLabel ? (
+        <span className="text-[8.5px] font-bold tracking-[.08em] text-[var(--accent)]">
+          {planLabel.toUpperCase()}
+        </span>
+      ) : null}
+
+      {open ? (
+        <div className="absolute bottom-full left-1/2 z-20 mb-2 w-[168px] -translate-x-1/2 rounded-[10px] border border-[var(--border-strong)] bg-white p-1 shadow-[0_8px_24px_rgba(22,22,26,.14)]">
+          {email ? (
+            <p className="truncate px-2.5 py-1.5 text-[10.5px] text-[var(--faint)]">{email}</p>
+          ) : null}
+          {isAdmin ? (
+            <Link
+              href="/admin"
+              className="flex items-center gap-2 rounded-[7px] px-2.5 py-1.5 text-[12px] font-medium text-[var(--foreground)] hover:bg-[var(--background)]"
+              onClick={() => setOpen(false)}
+            >
+              <Shield className="h-[15px] w-[15px]" strokeWidth={1.8} />
+              관리
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void signOut({ callbackUrl: "/" })}
+            className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-1.5 text-left text-[12px] font-medium text-[var(--foreground)] hover:bg-[var(--background)]"
+          >
+            <LogOut className="h-[15px] w-[15px]" strokeWidth={1.8} />
+            나가기
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function StudioShell({
   email,
   planLabel,
@@ -73,16 +165,18 @@ export function StudioShell({
   const isPostEditor = /^\/posts\/[^/]+$/.test(pathname) && !pathname.startsWith("/posts/new");
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-[#F3F4F8] text-[color:var(--foreground)]">
-      <aside className="flex w-[72px] shrink-0 flex-col border-r border-[var(--border)] bg-white">
+    <div className="flex h-[100dvh] overflow-hidden bg-[var(--background)] text-[color:var(--foreground)]">
+      <aside className="flex w-[64px] shrink-0 flex-col border-r border-[var(--border)] bg-white">
         <Link
           href="/dashboard"
-          className="flex h-14 items-center justify-center border-b border-[var(--border)] text-sm font-bold tracking-tight"
+          className="flex h-[52px] items-center justify-center border-b border-[var(--border)]"
           title="Ditodio"
         >
-          Di
+          <span className="flex h-[26px] w-[26px] items-center justify-center rounded-[8px] bg-[var(--accent)] text-[12px] font-bold text-white">
+            Di
+          </span>
         </Link>
-        <nav className="flex flex-1 flex-col gap-1 p-2">
+        <nav className="flex flex-1 flex-col gap-0.5 p-1.5">
           {RAIL.map((item) => {
             const active = item.match(pathname);
             const Icon = item.icon;
@@ -92,73 +186,47 @@ export function StudioShell({
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium transition-colors",
+                  "flex flex-col items-center gap-1 rounded-[9px] px-1 py-[9px] text-[9.5px] font-semibold transition-colors",
                   active
                     ? "bg-[var(--accent-soft)] text-[var(--accent)]"
-                    : "text-[color:var(--muted)] hover:bg-[var(--background)] hover:text-[color:var(--foreground)]",
+                    : "text-[#8A8A94] hover:bg-[var(--background)] hover:text-[color:var(--foreground)]",
                 )}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
                 {item.label}
               </Link>
             );
           })}
           <NewCutLink>
-            <span
-              className={cn(
-                "flex w-full cursor-pointer flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium text-[color:var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[color:var(--foreground)]",
-              )}
-            >
-              <Clapperboard className="h-5 w-5" />
+            <span className="flex w-full cursor-pointer flex-col items-center gap-1 rounded-[9px] px-1 py-[9px] text-[9.5px] font-semibold text-[#8A8A94] transition-colors hover:bg-[var(--background)] hover:text-[color:var(--foreground)]">
+              <Clapperboard className="h-[18px] w-[18px]" strokeWidth={1.7} />
               쇼츠
             </span>
           </NewCutLink>
         </nav>
-        <div className="space-y-1 border-t border-[var(--border)] p-2">
+        <div className="border-t border-[var(--border)] px-1.5">
           <Link
             href="/billing"
             className={cn(
-              "flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium",
+              "flex flex-col items-center gap-1 rounded-[9px] px-1 py-[9px] text-[9.5px] font-semibold",
               pathname.startsWith("/billing")
                 ? "bg-[var(--accent-soft)] text-[var(--accent)]"
-                : "text-[color:var(--muted)] hover:bg-[var(--background)]",
+                : "text-[#8A8A94] hover:bg-[var(--background)]",
             )}
           >
-            <Settings className="h-5 w-5" />
+            <Settings className="h-[18px] w-[18px]" strokeWidth={1.7} />
             요금
           </Link>
-          {isAdmin ? (
-            <Link
-              href="/admin"
-              className="flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium text-[color:var(--muted)] hover:bg-[var(--background)]"
-            >
-              <Shield className="h-5 w-5" />
-              관리
-            </Link>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void signOut({ callbackUrl: "/" })}
-            className="flex w-full flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium text-[color:var(--muted)] hover:bg-[var(--background)]"
-            title={email || "로그아웃"}
-          >
-            <LogOut className="h-5 w-5" />
-            나가기
-          </button>
-          {planLabel ? (
-            <p className="truncate px-1 pb-1 text-center text-[9px] uppercase tracking-wide text-[color:var(--muted)]">
-              {planLabel}
-            </p>
-          ) : null}
+          <AccountMenu email={email} planLabel={planLabel} isAdmin={isAdmin} />
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {!isPostEditor ? (
-          <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-white/90 px-4 backdrop-blur">
-            <FileText className="h-4 w-4 text-[var(--accent)]" />
-            <p className="text-sm font-semibold">Ditodio Studio</p>
-            <p className="truncate text-xs text-[color:var(--muted)]">{email}</p>
+          <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--border)] bg-white px-5">
+            <span className="text-[13.5px] font-bold tracking-[-.015em] text-[var(--foreground)]">
+              {screenTitle(pathname)}
+            </span>
           </header>
         ) : null}
         <div

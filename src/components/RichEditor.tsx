@@ -253,7 +253,7 @@ export function RichEditor({
     <div className={cn("rounded-lg border border-[var(--border)] bg-white", className)}>
       <div
         className={cn(
-          "z-20 border-b border-[var(--border)] bg-white",
+          "z-30 border-b border-[var(--border)] bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/90",
           stickyToolbar && "sticky top-0 shadow-sm",
         )}
       >

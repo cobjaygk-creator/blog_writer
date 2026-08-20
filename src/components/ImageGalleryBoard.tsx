@@ -531,7 +531,7 @@ function ParagraphRow({
 
   return (
     <>
-      <div className="grid gap-3 md:grid-cols-[160px_1fr]">
+      <div className="flex flex-col gap-3">
         <ParagraphThumbs
           images={images}
           onOpen={(index) => setPreviewIndex(index)}
@@ -629,7 +629,8 @@ function ParagraphThumbs({
   return (
     <div
       className={cn(
-        "grid h-36 gap-0.5 overflow-hidden rounded-lg bg-[var(--background)]",
+        "grid w-full gap-0.5 overflow-hidden rounded-lg bg-[var(--background)]",
+        count <= 1 ? "aspect-[16/10] grid-cols-1" : "h-40",
         gridClass,
         count === 3 && "grid-rows-2",
         count === 4 && "grid-rows-2",

@@ -12,6 +12,13 @@ export const POST_STATUS_HINTS: Record<string, string> = {
   archived: "목록에서 덜 보이게 보관한 글입니다.",
 };
 
+export const POST_STATUS_TONE: Record<string, "neutral" | "accent" | "success" | "warning"> = {
+  collecting: "warning",
+  draft: "accent",
+  published: "success",
+  archived: "neutral",
+};
+
 export function postStatusLabel(status: string) {
   return POST_STATUS_LABELS[status] || status;
 }

@@ -1,5 +1,8 @@
 "use client";
 
+import { useRef, useState } from "react";
+import { Plus } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 
 type Img = {
@@ -8,70 +11,152 @@ type Img = {
   caption: string | null;
 };
 
+type Pan = { x: number; y: number };
+
+function FilmThumb({
+  img,
+  index,
+  onActivate,
+}: {
+  img: Img;
+  index: number;
+  onActivate: (imageUrl: string) => void;
+}) {
+  const [pos, setPos] = useState<Pan>({ x: 50, y: 50 });
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origin: Pan;
+    moved: boolean;
+  } | null>(null);
+
+  function onPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      origin: pos,
+      moved: false,
+    };
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
+    if (!d.moved) return;
+    // Drag to pan cropped cover image (object-position %)
+    setPos({
+      x: Math.min(100, Math.max(0, d.origin.x - dx * 0.45)),
+      y: Math.min(100, Math.max(0, d.origin.y - dy * 0.45)),
+    });
+  }
+
+  function onPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    const wasClick = !d.moved;
+    dragRef.current = null;
+    if (wasClick) onActivate(img.imageUrl);
+  }
+
+  return (
+    <button
+      type="button"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      title={
+        img.caption
+          ? `${img.caption} · 드래그로 크롭 위치 조정, 클릭 시 본문으로 이동`
+          : `사진 ${index + 1} · 드래그로 크롭 위치 조정, 클릭 시 본문으로 이동`
+      }
+      className="relative h-[78px] w-full shrink-0 cursor-grab overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] active:cursor-grabbing"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={img.imageUrl}
+        alt=""
+        draggable={false}
+        className="pointer-events-none h-full w-full object-cover"
+        style={{ objectPosition: `${pos.x}% ${pos.y}%` }}
+      />
+      <span className="pointer-events-none absolute bottom-[5px] left-[5px] right-[5px] truncate rounded-[4px] bg-[rgba(22,22,26,.72)] px-[5px] py-[2px] text-left text-[9.5px] font-semibold text-white">
+        {index + 1}
+        {img.caption ? ` · ${img.caption}` : ""}
+      </span>
+    </button>
+  );
+}
+
 export function PostFilmstrip({
   images,
-  max = 8,
   onOpenPhotos,
+  onFocusImage,
   className,
 }: {
   images: Img[];
   max?: number;
   onOpenPhotos: () => void;
+  /** Scroll/focus the matching image inside the editor canvas. */
+  onFocusImage?: (imageUrl: string) => void;
   className?: string;
 }) {
-  if (images.length === 0) {
-    return (
-      <button
-        type="button"
-        onClick={onOpenPhotos}
-        className={cn(
-          "flex w-full items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-white px-3 py-3 text-xs text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]",
-          className,
-        )}
-      >
-        사진 추가 · 관리
-      </button>
-    );
-  }
-
-  const shown = images.slice(0, max);
-  const rest = images.length - shown.length;
-
   return (
-    <div className={cn("space-y-1.5", className)}>
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-[color:var(--foreground)]">사진 {images.length}</span>
+    <aside
+      className={cn(
+        "flex w-[132px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)]",
+        className,
+      )}
+    >
+      <div className="sticky top-0 z-10 flex h-9 shrink-0 items-center border-b border-[var(--border)] bg-[var(--surface)] px-3">
+        <span className="[font-variant-numeric:tabular-nums] text-[11px] font-bold tracking-[.03em] text-[var(--faint)]">
+          사진 {images.length}
+        </span>
         <button
           type="button"
           onClick={onOpenPhotos}
-          className="text-[var(--accent)] hover:underline"
+          className="ml-auto text-[var(--hint)] hover:text-[var(--accent)]"
+          title="사진 추가"
         >
-          전체 관리
+          <Plus className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-        {shown.map((img) => (
-          <button
-            key={img.id}
-            type="button"
-            onClick={onOpenPhotos}
-            className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--background)]"
-            title={img.caption || "사진"}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img.imageUrl} alt="" className="h-full w-full object-cover" />
-          </button>
-        ))}
-        {rest > 0 ? (
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-[9px]">
+        {images.length === 0 ? (
           <button
             type="button"
             onClick={onOpenPhotos}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--background)] text-xs font-medium text-[color:var(--muted)]"
+            className="flex w-full items-center justify-center rounded-[8px] border border-dashed border-[var(--border-strong)] px-2 py-6 text-center text-[11px] text-[var(--faint)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
           >
-            +{rest}
+            사진 추가
           </button>
-        ) : null}
+        ) : (
+          <div className="flex flex-col gap-2">
+            {images.map((img, i) => (
+              <FilmThumb
+                key={img.id}
+                img={img}
+                index={i}
+                onActivate={(url) => {
+                  if (onFocusImage) onFocusImage(url);
+                  else onOpenPhotos();
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
-    </div>
+    </aside>
   );
 }

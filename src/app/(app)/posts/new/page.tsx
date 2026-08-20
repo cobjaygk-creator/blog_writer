@@ -3,6 +3,8 @@ import Link from "next/link";
 import { PostWizard } from "@/components/PostWizard";
 import { StudioQuickCreate } from "@/components/studio/StudioQuickCreate";
 import { auth } from "@/lib/auth";
+import { getEntitlementSnapshot } from "@/lib/entitlements";
+import { getPlanLimits, isUnlimitedEmail, normalizePlan } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 import { isStudioUiEnabled } from "@/lib/studio-ui";
 import { normalizeTraitsJson } from "@/lib/style-traits";
@@ -11,9 +13,10 @@ type Props = { searchParams: Promise<{ brandId?: string }> };
 
 export default async function NewPostPage({ searchParams }: Props) {
   const session = await auth();
+  const userId = session!.user!.id;
   const { brandId } = await searchParams;
   const brands = await prisma.brand.findMany({
-    where: { userId: session!.user!.id },
+    where: { userId },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -32,9 +35,36 @@ export default async function NewPostPage({ searchParams }: Props) {
   }));
 
   if (isStudioUiEnabled()) {
+    const plan = normalizePlan(session!.user!.plan);
+    const unlimited = isUnlimitedEmail(session!.user!.email);
+    const limits = getPlanLimits(plan, session!.user!.email);
+    const [entitlement, recentJobs] = await Promise.all([
+      getEntitlementSnapshot(userId, limits),
+      prisma.postGenerationJob.findMany({
+        where: { userId, kind: "generate", status: "completed" },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { createdAt: true, updatedAt: true },
+      }),
+    ]);
+    const remainingPosts = unlimited ? null : entitlement.meters.posts.remaining;
+    const estimatedSeconds =
+      recentJobs.length > 0
+        ? Math.round(
+            recentJobs.reduce((sum, j) => sum + (j.updatedAt.getTime() - j.createdAt.getTime()), 0) /
+              recentJobs.length /
+              1000,
+          )
+        : null;
+
     return (
       <main>
-        <StudioQuickCreate brands={brandOptions} initialBrandId={brandId || null} />
+        <StudioQuickCreate
+          brands={brandOptions}
+          initialBrandId={brandId || null}
+          remainingPosts={remainingPosts}
+          estimatedSeconds={estimatedSeconds}
+        />
       </main>
     );
   }

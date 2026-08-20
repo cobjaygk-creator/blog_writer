@@ -94,6 +94,12 @@ export function ensureImagesInHtml(
   return prepareEditorHtml(merged);
 }
 
+/** Rough displayable character count for a list/table cell — tags stripped, no image annotations. */
+export function plainTextLength(html: string | null | undefined) {
+  if (!html) return 0;
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
+}
+
 export function htmlToPlainText(html: string) {
   return html
     .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, "\n[사진: $1]\n")
