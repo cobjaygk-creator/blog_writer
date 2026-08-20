@@ -47,7 +47,7 @@ COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
 
 COPY deploy/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh \
-  && mkdir -p /app/public/uploads /app/.data \
+  && mkdir -p /app/public/uploads /app/.data/uploads \
   && chown -R nextjs:nodejs /app /docker-entrypoint.sh
 
 USER nextjs

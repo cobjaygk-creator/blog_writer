@@ -11,6 +11,7 @@ import {
   storageTimeoutMs,
   uploadMaxBytes,
 } from "@/lib/integrations";
+import { localUploadsDir } from "@/lib/local-uploads";
 
 function getS3Client() {
   return new S3Client({
@@ -110,13 +111,14 @@ async function uploadLocally(input: {
   key: string;
   usedFallback: boolean;
 }): Promise<UploadResult> {
-  const uploadsDir = path.join(process.cwd(), "public", "uploads");
+  const uploadsDir = localUploadsDir();
   await mkdir(uploadsDir, { recursive: true });
   const filename = input.key.replace(/\//g, "-");
   await writeFile(path.join(uploadsDir, filename), input.buffer);
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
   return {
-    imageUrl: `${appUrl}/uploads/${filename}`,
+    // Serve via API so Next standalone can return runtime-written files.
+    imageUrl: `${appUrl}/api/uploads/${filename}`,
     contentType: input.contentType,
     provider: "local",
     usedFallback: input.usedFallback,
