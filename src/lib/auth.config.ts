@@ -41,6 +41,7 @@ export const authConfig = {
       const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/register");
       const isPublic =
         pathname === "/" ||
+        pathname.startsWith("/uploads") ||
         pathname.startsWith("/api/auth") ||
         pathname.startsWith("/api/platform") ||
         pathname === "/api/health" ||

@@ -9,8 +9,17 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = Boolean(req.auth);
   const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/register");
+  const isPublicAsset =
+    pathname.startsWith("/uploads/") ||
+    pathname === "/uploads";
 
-  if (!isLoggedIn && !isAuthPage && pathname !== "/" && !pathname.startsWith("/api/")) {
+  if (
+    !isLoggedIn &&
+    !isAuthPage &&
+    !isPublicAsset &&
+    pathname !== "/" &&
+    !pathname.startsWith("/api/")
+  ) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("callbackUrl", pathname);
@@ -27,5 +36,7 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|uploads/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };
