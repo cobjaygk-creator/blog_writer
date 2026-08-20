@@ -26,18 +26,32 @@ export async function POST(request: Request) {
   }
 
   const email = parsed.data.email.toLowerCase().trim();
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    return NextResponse.json({ error: "이미 가입된 이메일입니다." }, { status: 409 });
+
+  try {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json({ error: "이미 가입된 이메일입니다." }, { status: 409 });
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await hashPassword(parsed.data.password),
+      },
+      select: { id: true, email: true, plan: true, createdAt: true },
+    });
+
+    return NextResponse.json({ user }, { status: 201 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[register]", message);
+    return NextResponse.json(
+      {
+        error:
+          "데이터베이스에 연결하지 못했습니다. Railway Variables의 DATABASE_URL과 Deploy 로그의 prisma migrate를 확인하세요.",
+        detail: message.slice(0, 300),
+      },
+      { status: 500 },
+    );
   }
-
-  const user = await prisma.user.create({
-    data: {
-      email,
-      passwordHash: await hashPassword(parsed.data.password),
-    },
-    select: { id: true, email: true, plan: true, createdAt: true },
-  });
-
-  return NextResponse.json({ user }, { status: 201 });
 }
