@@ -498,24 +498,14 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
                         <div className="flex rounded-lg border border-[var(--border)] p-0.5 text-xs">
                           <button
                             type="button"
-                            className={cn(
-                              "rounded-md px-3 py-1.5",
-                              p.editorTab === "edit"
-                                ? "bg-[var(--accent)] text-white"
-                                : "text-[color:var(--muted)]",
-                            )}
+                            className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-white"
                             onClick={() => p.setEditorTab("edit")}
                           >
                             편집
                           </button>
                           <button
                             type="button"
-                            className={cn(
-                              "rounded-md px-3 py-1.5",
-                              p.editorTab === "preview"
-                                ? "bg-[var(--accent)] text-white"
-                                : "text-[color:var(--muted)]",
-                            )}
+                            className="rounded-md px-3 py-1.5 text-[color:var(--muted)]"
                             onClick={() => p.setEditorTab("preview")}
                           >
                             미리보기

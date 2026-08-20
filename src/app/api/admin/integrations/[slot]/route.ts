@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { adminJson, clientIp, requireAdmin, writeAdminAudit } from "@/lib/admin";
@@ -15,8 +16,8 @@ type Params = { params: Promise<{ slot: string }> };
 
 const patchSchema = z.object({
   enabled: z.boolean().optional(),
-  publicConfig: z.record(z.unknown()).optional(),
-  secrets: z.record(z.string()).optional(),
+  publicConfig: z.record(z.string(), z.unknown()).optional(),
+  secrets: z.record(z.string(), z.string()).optional(),
   label: z.string().trim().min(1).max(80).optional(),
 });
 
@@ -64,14 +65,17 @@ export async function PATCH(request: Request, { params }: Params) {
       }
     }
     const enc = encryptSecretPayload(secrets);
-    ciphertext = enc.ciphertext;
-    iv = enc.iv;
+    ciphertext = Buffer.from(enc.ciphertext);
+    iv = Buffer.from(enc.iv);
     hintJson = hintsFromSecrets(secrets);
   }
 
-  const publicConfig = parsed.data.publicConfig ?? existing?.publicConfig ?? {};
+  const publicConfig = (parsed.data.publicConfig ??
+    existing?.publicConfig ??
+    {}) as Prisma.InputJsonValue;
   const label = parsed.data.label || meta.label;
   const enabled = parsed.data.enabled ?? existing?.enabled ?? true;
+  const hintJsonValue = hintJson as Prisma.InputJsonValue;
 
   const row = await prisma.integrationSecret.upsert({
     where: { slot },
@@ -82,7 +86,7 @@ export async function PATCH(request: Request, { params }: Params) {
       iv,
       publicConfig,
       enabled,
-      hintJson,
+      hintJson: hintJsonValue,
       updatedById: user!.id,
     },
     update: {
@@ -91,7 +95,7 @@ export async function PATCH(request: Request, { params }: Params) {
       iv,
       publicConfig,
       enabled,
-      hintJson,
+      hintJson: hintJsonValue,
       updatedById: user!.id,
     },
   });

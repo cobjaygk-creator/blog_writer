@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { adminJson, clientIp, requireAdmin, writeAdminAudit } from "@/lib/admin";
@@ -88,7 +89,7 @@ export async function PATCH(request: Request) {
     imagesPerPost: nextImages,
     generatesPerDay: nextGen,
     dualGenerationEnabled: nextDual,
-  });
+  }) as Prisma.InputJsonValue;
 
   const after = await prisma.planProduct.update({
     where: { id },

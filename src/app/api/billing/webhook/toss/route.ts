@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { getTossKeys } from "@/lib/integration-config";
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
         where: { id: existing.id },
         data: {
           status: nextStatus,
-          rawWebhookJson: payload,
+          rawWebhookJson: payload as Prisma.InputJsonValue,
           paidAt: nextStatus === "paid" ? existing.paidAt || new Date() : existing.paidAt,
           refundedAt: nextStatus === "refunded" ? new Date() : existing.refundedAt,
         },

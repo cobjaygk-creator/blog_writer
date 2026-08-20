@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { PlanLimits } from "@/lib/plans";
 import {
   DITODIO_PRODUCT_CODE,
@@ -112,7 +113,7 @@ export async function ensurePlanProductsSeeded() {
   for (const code of seeds) {
     const limits = PLAN_LIMITS[code];
     const prices = PLAN_PRICES[code];
-    const limitsJson = limitsToJson(limits);
+    const limitsJson = limitsToJson(limits) as Prisma.InputJsonValue;
     const existing = await prisma.planProduct.findUnique({
       where: { productCode_code: { productCode: DITODIO_PRODUCT_CODE, code } },
     });
@@ -172,7 +173,7 @@ export async function ensurePlanProductsSeeded() {
         where: { id: existing.id },
         data: {
           dualGenerationEnabled: limits.dualGenerationEnabled,
-          limitsJson: { ...lj, dualGenerationEnabled: limits.dualGenerationEnabled },
+          limitsJson: { ...lj, dualGenerationEnabled: limits.dualGenerationEnabled } as Prisma.InputJsonValue,
         },
       });
     }
