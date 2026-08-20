@@ -35,18 +35,20 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/.bin ./node_modules/.bin
-# standalone server
+# Full install so `prisma migrate deploy` has all CLI deps at runtime
+COPY --from=deps /app/node_modules ./node_modules
+# standalone server (overlays minimal runtime files; keeps prisma CLI above)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Restore prisma packages after standalone overlay
+COPY --from=deps /app/node_modules/prisma ./node_modules/prisma
+COPY --from=deps /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
 
 COPY deploy/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh \
   && mkdir -p /app/public/uploads /app/.data \
-  && chown -R nextjs:nodejs /app/public/uploads /app/.data
+  && chown -R nextjs:nodejs /app /docker-entrypoint.sh
 
 USER nextjs
 EXPOSE 3000
