@@ -2,7 +2,7 @@
 set -e
 
 if [ -n "$DATABASE_URL" ]; then
-  echo "[entrypoint] DATABASE_URL is set — running prisma migrate deploy"
+  echo "[entrypoint] DATABASE_URL is set - running prisma migrate deploy"
   i=1
   while [ "$i" -le 10 ]; do
     if ./node_modules/.bin/prisma migrate deploy; then
