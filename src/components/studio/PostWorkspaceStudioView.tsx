@@ -553,8 +553,11 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
                 <div className="mx-4 mb-4 space-y-2 rounded-lg border border-[#CDEBDD] bg-[#E7F5EF] px-3 py-3 text-sm text-[#0F7B52] md:mx-6">
                   {p.copyMsg ? <p className="font-medium">{p.copyMsg}</p> : null}
                   <ol className="list-decimal space-y-1 pl-4 text-[#0F7B52]/90">
-                    <li>네이버·티스토리 글쓰기에 붙여넣기</li>
-                    <li>사진·서식이 깨지면 용량·이미지 개수를 줄여 다시 복사</li>
+                    <li>네이버·티스토리 <strong>글쓰기(편집 화면)</strong>에 붙여넣기</li>
+                    <li>
+                      사진이 안 보이면 이미지 주소가 외부에서 열리는지 확인 (시연 서버가 꺼지면
+                      사진도 안 들어갑니다)
+                    </li>
                     <li>올렸다면 상단 <strong>발행</strong>으로 기록</li>
                   </ol>
                 </div>

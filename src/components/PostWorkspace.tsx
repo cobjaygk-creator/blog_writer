@@ -818,8 +818,8 @@ export function PostWorkspace({
     try {
       const html = `<h1>${escapeTitle(title)}</h1>${body}`;
       const plain = [title.trim(), "", htmlToPlainText(body)].filter(Boolean).join("\n");
-      await copyHtmlForBlogEditor(html, plain);
-      setCopyMsg("복사됨 — 네이버/티스토리 글쓰기에 붙여넣으세요.");
+      await copyHtmlForBlogEditor(html, plain, "naver");
+      setCopyMsg("공개 이미지 주소로 복사됨 — 네이버/티스토리 글쓰기(편집 화면)에 붙여넣으세요.");
       setShowCopyGuide(true);
     } catch {
       setError("복사에 실패했습니다. 브라우저 클립보드 권한을 확인해 주세요.");
@@ -1732,12 +1732,16 @@ export function PostWorkspace({
               <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950">
                 {copyMsg ? <p className="font-medium">{copyMsg}</p> : null}
                 <ol className="list-decimal space-y-1 pl-4 text-emerald-900/90">
-                  <li>네이버·티스토리 글쓰기에 붙여넣기</li>
-                  <li>사진·서식이 깨지면 용량·이미지 개수를 줄여 다시 복사</li>
+                  <li>네이버·티스토리 <strong>글쓰기(편집 화면)</strong>에 붙여넣기</li>
+                  <li>
+                    사진이 안 보이면 이미지 주소가 외부에서 열리는지 확인 (시연 서버가 꺼지면
+                    사진도 안 들어갑니다)
+                  </li>
                   <li>올렸다면 아래 <strong>올림 표시</strong>로 기록</li>
                 </ol>
                 <p className="text-xs text-emerald-800/80">
-                  팁: 네이버는 큰 이미지·복잡한 표가 잘릴 수 있어요. 티스토리는 HTML 붙여넣기가 비교적 안정적입니다.
+                  팁: 네이버는 base64 임베드 이미지를 거절합니다. 이 앱은 공개 HTTPS 주소로
+                  복사합니다.
                 </p>
                 {post.status !== "published" ? (
                   <Button
@@ -1752,7 +1756,7 @@ export function PostWorkspace({
               </div>
             ) : (
               <p className="text-xs text-[color:var(--muted)]">
-                복사 후 네이버/티스토리 글쓰기에 붙여넣으면 서식과 사진 유지를 시도합니다.
+                복사 후 네이버/티스토리 편집 화면에 붙여넣으면 공개 이미지 주소로 사진을 붙입니다.
               </p>
             )}
 
