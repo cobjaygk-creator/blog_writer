@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, GripVertical, Images, Link2 } from "lucide-react";
+import { GripVertical, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -71,7 +71,9 @@ export function StudioQuickCreate({
   estimatedSeconds?: number | null;
 }) {
   const router = useRouter();
-  const [mediaPath, setMediaPath] = useState<MediaPath | null>(null);
+  /** null = auto-inferred from what the user has entered; set once they override via "바꾸기". */
+  const [pinnedPath, setPinnedPath] = useState<MediaPath | null>(null);
+  const [overrideOpen, setOverrideOpen] = useState(false);
   const [brandId, setBrandId] = useState(
     initialBrandId || brands[0]?.id || USE_DEFAULT_THEME_ID,
   );
@@ -93,10 +95,21 @@ export function StudioQuickCreate({
   const [referenceText, setReferenceText] = useState("");
   const saveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  const withMedia = mediaPath === "with_media";
-  const withReference = mediaPath === "with_reference";
   const hasMedia = images.length > 0 || videos.length > 0;
   const keywordReady = keyword.trim().length > 0;
+  const referenceReady =
+    referenceUrl.trim().length > 0 || referenceText.trim().length >= 80;
+
+  // 5a — no mode-selection step: infer from what's actually filled in, and let
+  // the user override with "바꾸기" instead of forcing a choice before typing.
+  const inferredPath: MediaPath = referenceReady
+    ? "with_reference"
+    : hasMedia
+      ? "with_media"
+      : "without_media";
+  const mediaPath = pinnedPath ?? inferredPath;
+  const withMedia = mediaPath === "with_media";
+  const withReference = mediaPath === "with_reference";
   const generateOpen = busy === "generate";
   const generateKind = withMedia
     ? "generate"
@@ -104,8 +117,6 @@ export function StudioQuickCreate({
       ? "generate_reference"
       : "generate_topic";
   const generateRange = phaseProgressRange(generatePhase, generateKind);
-  const referenceReady =
-    referenceUrl.trim().length > 0 || referenceText.trim().length >= 80;
 
   async function ensurePost(): Promise<string> {
     if (postId) return postId;
@@ -531,6 +542,21 @@ export function StudioQuickCreate({
     }
   }
 
+  /** Single CTA — routes to whichever generate path was inferred (or pinned). */
+  async function generate() {
+    if (withReference) return createFromReferenceAndGenerate();
+    if (withMedia) return finishWithMedia(true);
+    return createTopicAndGenerate();
+  }
+
+  const canGenerate = withReference ? referenceReady : keywordReady;
+
+  const inferredLabel = withReference
+    ? "참고 글로 판단했습니다"
+    : withMedia
+      ? "사진으로 판단했습니다"
+      : "주제로 판단했습니다";
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <GenerationProgressModal
@@ -542,120 +568,95 @@ export function StudioQuickCreate({
         complete={generateComplete}
         detail={
           withMedia
-            ? "테마·키워드·참고 내용·사진 프롬프트를 반영해 초안을 만들고 있습니다."
+            ? "말투·키워드·참고 내용·사진 프롬프트를 반영해 초안을 만들고 있습니다."
             : withReference
               ? "참고 글의 주제를 유지하고, 문장과 사진은 새로 만들고 있습니다."
-              : "키워드·테마를 바탕으로 포스트 초안을 만들고 있습니다."
+              : "키워드·말투를 바탕으로 포스트 초안을 만들고 있습니다."
         }
       />
 
-      {mediaPath === null ? (
-        <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-6 p-6">
-          <div>
-            <h1 className="text-[19px] font-bold text-[var(--foreground)]">어떻게 시작할까요?</h1>
-            <p className="mt-1 text-[12.5px] text-[var(--muted)]">
-              가진 재료에 따라 다음 단계가 달라져요.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setMediaPath("with_media")}
-              className="flex flex-col items-start gap-3 rounded-[12px] border border-[var(--border)] bg-white p-5 text-left transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[var(--accent-soft)] text-[var(--accent)]">
-                <Images className="h-[18px] w-[18px]" strokeWidth={1.8} />
-              </span>
-              <span className="text-[14px] font-bold text-[var(--foreground)]">사진이나 영상이 있어요</span>
-              <span className="text-[11.5px] leading-[1.6] text-[var(--muted)]">
-                키워드·참고 내용을 적고 사진 프롬프트를 준비한 뒤 초안을 만듭니다.
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMediaPath("without_media")}
-              className="flex flex-col items-start gap-3 rounded-[12px] border border-[var(--border)] bg-white p-5 text-left transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[var(--surface-2)] text-[var(--muted)]">
-                <FileText className="h-[18px] w-[18px]" strokeWidth={1.8} />
-              </span>
-              <span className="text-[14px] font-bold text-[var(--foreground)]">사진이나 영상이 없어요</span>
-              <span className="text-[11.5px] leading-[1.6] text-[var(--muted)]">
-                키워드만으로 블로그 포스트를 쓰고, 필요하면 이미지를 찾아 붙입니다.
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMediaPath("with_reference")}
-              className="flex flex-col items-start gap-3 rounded-[12px] border border-[var(--border)] bg-white p-5 text-left transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] sm:col-span-2"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[var(--surface-2)] text-[var(--muted)]">
-                <Link2 className="h-[18px] w-[18px]" strokeWidth={1.8} />
-              </span>
-              <span className="text-[14px] font-bold text-[var(--foreground)]">참고할 글이 있어요</span>
-              <span className="text-[11.5px] leading-[1.6] text-[var(--muted)]">
-                마음에 드는 글의 주소나 본문을 넣으면, 같은 주제로 문장·사진을 새로 만들어 씁니다.
-                원문을 그대로 복사하지 않습니다.
-              </span>
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-      <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--border)] bg-white px-5">
+      <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-[var(--border)] bg-white px-5">
+        <span className="text-[13.5px] font-bold text-[var(--foreground)]">글 만들기</span>
+        <span className="flex h-[22px] items-center gap-1 rounded-[6px] bg-[var(--accent-soft)] px-2 text-[10.5px] font-bold text-[var(--accent)]">
+          <Sparkles className="h-3 w-3" strokeWidth={2.2} />
+          {inferredLabel}
+        </span>
         <button
           type="button"
-          onClick={() => setMediaPath(null)}
-          className="text-[13.5px] font-bold text-[var(--foreground)] hover:text-[var(--accent)]"
-          title="처음부터 다시 선택"
+          onClick={() => setOverrideOpen((v) => !v)}
+          className="text-[11.5px] font-semibold text-[#8A8A94] hover:text-[var(--foreground)]"
         >
-          글 만들기
+          바꾸기
         </button>
-        <div className="ml-auto flex gap-[3px] rounded-[9px] bg-[var(--surface-2)] p-[3px]">
+        {pinnedPath ? (
           <button
             type="button"
-            onClick={() => setMediaPath("with_media")}
-            className={cn(
-              "flex h-[29px] items-center justify-center rounded-[7px] px-3.5 text-[12px] font-semibold",
-              withMedia ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]" : "text-[#8A8A94]",
-            )}
+            onClick={() => {
+              setPinnedPath(null);
+              setOverrideOpen(false);
+            }}
+            className="text-[11.5px] font-medium text-[var(--hint)] hover:text-[var(--muted)]"
           >
-            사진 있음
+            자동으로
           </button>
-          <button
-            type="button"
-            onClick={() => setMediaPath("without_media")}
-            className={cn(
-              "flex h-[29px] items-center justify-center rounded-[7px] px-3.5 text-[12px] font-semibold",
-              mediaPath === "without_media"
-                ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]"
-                : "text-[#8A8A94]",
-            )}
-          >
-            글만
-          </button>
-          <button
-            type="button"
-            onClick={() => setMediaPath("with_reference")}
-            className={cn(
-              "flex h-[29px] items-center justify-center rounded-[7px] px-3.5 text-[12px] font-semibold",
-              withReference
-                ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]"
-                : "text-[#8A8A94]",
-            )}
-          >
-            참고 글
-          </button>
-        </div>
+        ) : null}
+        {overrideOpen ? (
+          <div className="ml-1 flex gap-[3px] rounded-[9px] bg-[var(--surface-2)] p-[3px]">
+            <button
+              type="button"
+              onClick={() => {
+                setPinnedPath("with_media");
+                setOverrideOpen(false);
+              }}
+              className={cn(
+                "flex h-[26px] items-center justify-center rounded-[7px] px-3 text-[11.5px] font-semibold",
+                withMedia ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]" : "text-[#8A8A94]",
+              )}
+            >
+              사진 있음
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPinnedPath("without_media");
+                setOverrideOpen(false);
+              }}
+              className={cn(
+                "flex h-[26px] items-center justify-center rounded-[7px] px-3 text-[11.5px] font-semibold",
+                mediaPath === "without_media"
+                  ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]"
+                  : "text-[#8A8A94]",
+              )}
+            >
+              글만
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPinnedPath("with_reference");
+                setOverrideOpen(false);
+              }}
+              className={cn(
+                "flex h-[26px] items-center justify-center rounded-[7px] px-3 text-[11.5px] font-semibold",
+                withReference
+                  ? "bg-white text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]"
+                  : "text-[#8A8A94]",
+              )}
+            >
+              참고 글
+            </button>
+          </div>
+        ) : null}
+        <div className="ml-auto" />
       </div>
 
       {withReference ? (
         <div className="mx-auto w-full max-w-xl flex-1 space-y-4 p-6">
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">테마</span>
+            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">말투</span>
             <div className="flex flex-wrap gap-[7px]">
               <BrandChip
-                label="기본 테마"
+                label="기본 말투"
                 selected={brandId === USE_DEFAULT_THEME_ID}
                 disabled={Boolean(postId)}
                 onClick={() => setBrandId(USE_DEFAULT_THEME_ID)}
@@ -760,90 +761,14 @@ export function StudioQuickCreate({
             {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
           </Button>
         </div>
-      ) : !withMedia ? (
-        <div className="mx-auto w-full max-w-xl flex-1 space-y-4 p-6">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">테마</span>
-            <div className="flex flex-wrap gap-[7px]">
-              <BrandChip
-                label="기본 테마"
-                selected={brandId === USE_DEFAULT_THEME_ID}
-                disabled={Boolean(postId)}
-                onClick={() => setBrandId(USE_DEFAULT_THEME_ID)}
-              />
-              {brands.map((b) => (
-                <BrandChip
-                  key={b.id}
-                  label={b.name}
-                  learned={b.learned}
-                  selected={brandId === b.id}
-                  disabled={Boolean(postId)}
-                  onClick={() => setBrandId(b.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">주요 키워드</span>
-            <div className="flex h-11 items-center gap-2.5 rounded-[10px] border border-[var(--border)] bg-white px-3.5 focus-within:border-[#16161A] focus-within:shadow-[0_0_0_3px_rgba(22,22,26,.06)]">
-              <input
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                placeholder="예: 현재 주가가 내리는 이유"
-                maxLength={120}
-                className="min-w-0 flex-1 border-0 bg-transparent text-[15px] font-semibold text-[var(--foreground)] outline-none placeholder:font-normal placeholder:text-[var(--hint)]"
-              />
-              <span className="[font-variant-numeric:tabular-nums] shrink-0 text-[11px] text-[var(--hint)]">
-                {keyword.length} / 120
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">글 길이</span>
-            <div className="flex flex-wrap gap-[7px]">
-              {LENGTH_OPTIONS.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setLength(id)}
-                  className={cn(
-                    "flex h-8 items-center rounded-[8px] border px-3 text-[12.5px] font-semibold transition-colors",
-                    length === id
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
-                      : "border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--border-strong)]",
-                  )}
-                >
-                  {TOPIC_LENGTH_PRESETS[id].label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {error ? (
-            <p className="rounded-[8px] border border-[#F7E7E5] bg-[#F7E7E5] px-3 py-2 text-[12.5px] text-[#C2453C]">
-              {error}
-            </p>
-          ) : null}
-          <Button
-            type="button"
-            size="lg"
-            className="w-full"
-            disabled={busy !== null || !keyword.trim()}
-            onClick={() => void createTopicAndGenerate()}
-          >
-            {busy === "generate" ? "초안 생성 중…" : "초안 생성"}
-          </Button>
-        </div>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-[1fr_340px]">
           <div className="flex min-w-0 flex-col gap-[18px] overflow-y-auto p-[24px_26px]">
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">01 · 테마</span>
+              <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">01 · 말투</span>
               <div className="flex flex-wrap gap-[7px]">
                 <BrandChip
-                  label="기본 테마"
+                  label="기본 말투"
                   selected={brandId === USE_DEFAULT_THEME_ID}
                   disabled={Boolean(postId)}
                   onClick={() => setBrandId(USE_DEFAULT_THEME_ID)}
@@ -862,7 +787,7 @@ export function StudioQuickCreate({
                   href="/brands/new"
                   className="flex h-8 items-center rounded-[8px] border border-dashed border-[var(--border-strong)] px-3 text-[12.5px] font-semibold text-[#8A8A94] hover:border-[var(--accent)] hover:text-[var(--accent)]"
                 >
-                  + 테마 추가
+                  + 말투 추가
                 </Link>
               </div>
             </div>
@@ -1138,8 +1063,8 @@ export function StudioQuickCreate({
                 type="button"
                 size="lg"
                 className="mt-1 w-full"
-                disabled={busy !== null || !hasMedia}
-                onClick={() => void finishWithMedia(true)}
+                disabled={busy !== null || !canGenerate}
+                onClick={() => void generate()}
               >
                 {busy === "generate" ? "초안 생성 중…" : "초안 생성하기"}
               </Button>
@@ -1158,8 +1083,6 @@ export function StudioQuickCreate({
             </div>
           </div>
         </div>
-      )}
-        </>
       )}
     </div>
   );
