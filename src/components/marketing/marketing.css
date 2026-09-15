@@ -388,3 +388,807 @@
     animation: none;
   }
 }
+
+/* ── Nav text links (기능 · 요금 · 쇼츠) ─────────────────────────── */
+
+.marketing-nav-links {
+  display: none;
+  align-items: center;
+  gap: 1.5rem;
+  margin-right: 0.25rem;
+}
+
+@media (min-width: 780px) {
+  .marketing-nav-links {
+    display: flex;
+  }
+}
+
+.marketing-nav-link {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--m-muted);
+}
+
+.marketing-nav-link:hover {
+  color: var(--m-text);
+}
+
+.marketing-nav-link.is-active {
+  font-weight: 600;
+  color: var(--m-accent);
+}
+
+/* ── Hero mock preview card (editor score/body mockup) ───────────── */
+
+.marketing-editor-card {
+  border-radius: 16px;
+  border: 1px solid var(--m-border);
+  background: var(--m-bg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+}
+
+.marketing-editor-titlebar {
+  display: flex;
+  height: 42px;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--m-border);
+  background: var(--m-surface);
+  padding: 0 14px;
+}
+
+.marketing-editor-dot {
+  height: 9px;
+  width: 9px;
+  border-radius: 50%;
+  background: #e6e6eb;
+}
+
+.marketing-editor-score {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 0.656rem;
+  font-weight: 700;
+}
+
+.marketing-editor-score.is-tone {
+  background: #e7f5ef;
+  color: #0f7b52;
+}
+
+.marketing-editor-score.is-seo {
+  background: var(--m-accent-soft);
+  color: var(--m-accent);
+}
+
+.marketing-editor-body {
+  padding: 22px 24px;
+  background: var(--m-surface);
+}
+
+.marketing-editor-brand {
+  font-size: 0.656rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--m-accent);
+}
+
+.marketing-editor-title {
+  margin: 9px 0 12px;
+  font-size: 1.1875rem;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+
+.marketing-editor-para {
+  margin: 0 0 11px;
+  font-size: 0.84375rem;
+  line-height: 1.75;
+  color: #3f3f46;
+}
+
+.marketing-editor-para mark {
+  background: #fcf3da;
+  border-bottom: 2px solid #e0a93c;
+  color: inherit;
+}
+
+.marketing-editor-photo {
+  height: 120px;
+  border-radius: 8px;
+  background: #ededf1;
+  margin-bottom: 11px;
+}
+
+.marketing-editor-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--m-border);
+  background: var(--m-surface);
+  padding: 13px 24px;
+}
+
+.marketing-editor-footer span:first-child {
+  font-size: 0.71875rem;
+  color: var(--m-faint);
+}
+
+.marketing-editor-footer-cta {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--m-accent);
+  padding: 0 14px;
+  font-size: 0.78125rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* ── Trust strip ──────────────────────────────────────────────────── */
+
+.marketing-trust-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--m-border);
+  background: var(--m-surface);
+  color: var(--m-faint);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.marketing-trust-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #e6e6eb;
+  flex-shrink: 0;
+}
+
+/* ── Audience cards ───────────────────────────────────────────────── */
+
+.marketing-audience {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 720px) {
+  .marketing-audience {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.marketing-audience-card {
+  border: 1px solid var(--m-border);
+  border-radius: 14px;
+  background: var(--m-surface);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.marketing-audience-card h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.marketing-audience-card p {
+  margin: 0;
+  color: var(--m-muted);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+/* ── Proof section ("자동으로 올려 주는 도구가 아닙니다") ─────────── */
+
+.marketing-proof {
+  display: grid;
+  gap: 2rem;
+  align-items: center;
+}
+
+@media (min-width: 860px) {
+  .marketing-proof {
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 3.25rem;
+  }
+}
+
+.marketing-proof-eyebrow {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--m-accent);
+}
+
+.marketing-proof h2 {
+  margin: 0.75rem 0 0;
+  font-size: clamp(1.75rem, 3vw, 2.15rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.25;
+}
+
+.marketing-proof p {
+  margin: 0.9rem 0 0;
+  color: var(--m-muted);
+  line-height: 1.7;
+  font-size: 1.03rem;
+}
+
+.marketing-proof p.marketing-proof-faint {
+  color: var(--m-faint);
+  font-size: 0.9375rem;
+}
+
+.marketing-review-card {
+  border-radius: 14px;
+  border: 1px solid var(--m-border);
+  background: var(--m-bg);
+  padding: 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.marketing-review-flag {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border-radius: 11px;
+  border: 1px solid #f0dfb4;
+  background: #fdf9ee;
+  padding: 0.9rem;
+}
+
+.marketing-review-flag-badge {
+  display: inline-flex;
+  height: 19px;
+  min-width: 19px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: #e0a93c;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.marketing-review-flag-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b4e10;
+}
+
+.marketing-review-flag-body {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: #8a6410;
+}
+
+.marketing-review-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.35rem 0.25rem 0;
+}
+
+.marketing-review-check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: var(--m-muted);
+}
+
+.marketing-review-check svg {
+  color: #0f7b52;
+  flex-shrink: 0;
+}
+
+/* ── 3-step mini mockups ──────────────────────────────────────────── */
+
+.marketing-step-mini {
+  border-radius: 14px;
+  border: 1px solid var(--m-border);
+  background: var(--m-surface);
+  height: 150px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.marketing-step-mini-bar {
+  height: 10px;
+  border-radius: 4px;
+  background: #f0f0f3;
+}
+
+.marketing-step-mini-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--m-accent-soft);
+  padding: 0 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--m-accent);
+}
+
+.marketing-step-mini-photos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.marketing-step-mini-photos span {
+  height: 46px;
+  border-radius: 8px;
+  background: #ededf1;
+}
+
+/* ── Field = mobile section ───────────────────────────────────────── */
+
+.marketing-field {
+  display: grid;
+  gap: 2rem;
+  align-items: center;
+}
+
+@media (min-width: 860px) {
+  .marketing-field {
+    grid-template-columns: 1fr 0.8fr;
+    gap: 3.25rem;
+  }
+}
+
+.marketing-field-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+
+.marketing-field-check {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.marketing-field-check svg {
+  color: #0f7b52;
+  flex-shrink: 0;
+}
+
+.marketing-phone {
+  width: 230px;
+  border-radius: 26px;
+  border: 1px solid var(--m-border);
+  background: var(--m-surface);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  margin: 0 auto;
+}
+
+.marketing-phone-header {
+  display: flex;
+  height: 30px;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 16px 5px;
+  font-size: 0.625rem;
+  font-weight: 600;
+}
+
+.marketing-phone-body {
+  padding: 12px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.marketing-phone-body h4 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.marketing-phone-hero {
+  border-radius: 14px;
+  background: var(--m-accent);
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.marketing-phone-hero span:first-child {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.marketing-phone-hero-thumbs {
+  display: flex;
+  gap: 5px;
+}
+
+.marketing-phone-hero-thumbs span {
+  flex: 1;
+  height: 38px;
+  border-radius: 8px;
+}
+
+.marketing-phone-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  border-radius: 11px;
+  border: 1px solid var(--m-border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.marketing-phone-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 11px;
+  border: 1px solid var(--m-border);
+  padding: 9px;
+}
+
+.marketing-phone-row-thumb {
+  height: 34px;
+  width: 34px;
+  border-radius: 8px;
+  background: #ededf1;
+  flex-shrink: 0;
+}
+
+.marketing-phone-row-title {
+  font-size: 0.71875rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketing-phone-row-meta {
+  font-size: 0.65625rem;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+/* ── Pricing (compact strip on landing + full grid on /pricing) ──── */
+
+.marketing-pricing-strip-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+  flex-wrap: wrap;
+}
+
+.marketing-pricing-link {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--m-accent);
+  flex-shrink: 0;
+}
+
+.marketing-pricing-strip {
+  display: grid;
+  gap: 0.9rem;
+}
+
+@media (min-width: 720px) {
+  .marketing-pricing-strip {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.marketing-price-card {
+  position: relative;
+  border: 1px solid var(--m-border);
+  border-radius: 14px;
+  background: var(--m-bg);
+  padding: 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.marketing-price-card.is-highlight {
+  border: 1.5px solid var(--m-accent);
+  background: var(--m-surface);
+  box-shadow: 0 8px 24px rgba(94, 86, 240, 0.14);
+}
+
+.marketing-price-badge {
+  position: absolute;
+  right: 1.1rem;
+  top: -11px;
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.marketing-price-card--full .marketing-price-badge {
+  left: 1.75rem;
+  right: auto;
+  top: -12px;
+  height: 24px;
+  border-radius: 7px;
+  font-size: 0.71875rem;
+}
+
+.marketing-price-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.marketing-price-card--full .marketing-price-name {
+  font-size: 1.0625rem;
+}
+
+.marketing-price-name.is-accent {
+  color: var(--m-accent);
+}
+
+.marketing-price-target {
+  margin: 0;
+  font-size: 0.875rem;
+  color: rgba(0, 0, 0, 0.5);
+  line-height: 1.55;
+}
+
+.marketing-price-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.marketing-price-amount strong {
+  font-size: 1.7rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.marketing-price-card--full .marketing-price-amount strong {
+  font-size: 2.35rem;
+}
+
+.marketing-price-amount span {
+  font-size: 0.8125rem;
+  color: var(--m-faint);
+}
+
+.marketing-price-quota {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--m-accent);
+}
+
+.marketing-price-unit {
+  font-size: 0.78rem;
+  color: rgba(0, 0, 0, 0.42);
+}
+
+.marketing-price-cta {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid var(--m-border);
+  background: var(--m-surface);
+  color: var(--m-text);
+}
+
+.marketing-price-cta.is-primary {
+  border: none;
+  background: var(--m-accent);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(94, 86, 240, 0.34);
+}
+
+.marketing-price-features {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.marketing-price-divider {
+  height: 1px;
+  background: var(--m-border);
+}
+
+.marketing-price-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.marketing-price-feature svg {
+  color: #0f7b52;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.marketing-price-feature small {
+  display: block;
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.42);
+  margin-top: 0.15rem;
+}
+
+/* ── FAQ grid ─────────────────────────────────────────────────────── */
+
+.marketing-faq-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 720px) {
+  .marketing-faq-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.marketing-faq-card {
+  border: 1px solid var(--m-border);
+  border-radius: 14px;
+  background: var(--m-surface);
+  padding: 1.25rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.marketing-faq-card h3,
+.marketing-faq-card h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.marketing-faq-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--m-muted);
+}
+
+/* ── Pricing page hero + contact strip ────────────────────────────── */
+
+.marketing-pricing-hero {
+  text-align: center;
+  padding: 3.5rem 1.5rem 2.75rem;
+  border-bottom: 1px solid var(--m-border);
+  background: var(--m-surface);
+}
+
+.marketing-pricing-hero h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.marketing-pricing-hero p {
+  margin: 0.8rem auto 0;
+  max-width: 34rem;
+  color: var(--m-muted);
+  font-size: 1.03rem;
+  line-height: 1.7;
+}
+
+.marketing-pricing-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1.35rem;
+  border-radius: 9999px;
+  background: var(--m-bg);
+  border: 1px solid var(--m-border);
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.marketing-pricing-pill svg {
+  color: #0f7b52;
+  flex-shrink: 0;
+}
+
+.marketing-pricing-grid {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 2.5rem 1.5rem 1.25rem;
+  align-items: start;
+}
+
+@media (min-width: 960px) {
+  .marketing-pricing-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.marketing-price-card--full {
+  border-radius: 16px;
+  padding: 1.75rem;
+  gap: 1.1rem;
+}
+
+.marketing-contact-strip {
+  margin: 0 auto;
+  max-width: 1040px;
+  padding: 1.5rem 1.5rem 3.5rem;
+}
+
+.marketing-contact-strip-inner {
+  border-radius: 14px;
+  border: 1px solid var(--m-border);
+  background: var(--m-surface);
+  padding: 1.35rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.marketing-contact-strip h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.marketing-contact-strip p {
+  margin: 0.3rem 0 0;
+  font-size: 0.9rem;
+  color: var(--m-muted);
+}

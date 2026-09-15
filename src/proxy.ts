@@ -12,12 +12,14 @@ export default auth((req) => {
   const isPublicAsset =
     pathname.startsWith("/uploads/") ||
     pathname === "/uploads";
+  // Public marketing pages — no session required.
+  const isPublicMarketing = pathname === "/" || pathname === "/pricing";
 
   if (
     !isLoggedIn &&
     !isAuthPage &&
     !isPublicAsset &&
-    pathname !== "/" &&
+    !isPublicMarketing &&
     !pathname.startsWith("/api/")
   ) {
     const url = req.nextUrl.clone();
