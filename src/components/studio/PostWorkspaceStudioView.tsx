@@ -1,8 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Moon, Sun } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import {
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  Clapperboard,
+  Moon,
+  Palette,
+  Sun,
+  X,
+} from "lucide-react";
+import { FormEvent, RefObject, useEffect, useState } from "react";
 
 import { GenerationProgressModal } from "@/components/GenerationProgressModal";
 import { ImageGalleryBoard } from "@/components/ImageGalleryBoard";
@@ -119,6 +128,11 @@ export type PostWorkspaceStudioViewProps = {
     string,
     { score?: number; repaired?: boolean; issues?: string[]; heuristic?: boolean }
   > | null;
+  hasSavedOnce: boolean;
+  autoSaveFailed: boolean;
+  autoSaving: boolean;
+  charCount: number;
+  readMinutes: number;
   generateOpen: boolean;
   generatePhaseLabel: string | null;
   generateRange: { floor: number; ceiling: number };
@@ -153,9 +167,13 @@ export type PostWorkspaceStudioViewProps = {
       publishPlatform?: "naver" | "tistory" | "other" | null;
       skipUrl?: boolean;
     },
-  ) => void;
+  ) => Promise<void> | void;
   onLearnPublish: () => void;
+  onOpenPublish: () => void;
 };
+
+// Naver's desktop blog-picker write page — opens a "which blog" chooser without needing a blogId.
+const NAVER_WRITE_URL = "https://blog.naver.com/GoBlogWrite.naver";
 
 type PanelTab = "review" | "style" | "photos";
 
@@ -182,6 +200,48 @@ function ScoreGauge({ score }: { score: number }) {
       />
     </svg>
   );
+}
+
+/**
+ * Only the "banned phrase used" issue embeds a literal quote from the body
+ * ("금지 표현 사용: {phrase}") — every other issue string is a description,
+ * not a locatable span, so we only ever offer a jump target for this one.
+ */
+function extractFluffPhrase(issue: string): string | null {
+  const m = issue.match(/^금지 표현 사용: (.+)$/);
+  return m ? m[1].trim() : null;
+}
+
+/** Find `phrase` inside `ref`'s text, briefly highlight it, and scroll it into view. */
+function scrollToPhrase(ref: RefObject<HTMLElement | null>, phrase: string): boolean {
+  const root = ref.current;
+  if (!root) return false;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const idx = (node.textContent || "").indexOf(phrase);
+    if (idx === -1) continue;
+    const range = document.createRange();
+    range.setStart(node, idx);
+    range.setEnd(node, idx + phrase.length);
+    const mark = document.createElement("mark");
+    mark.style.background = "#FCF3DA";
+    mark.style.borderBottom = "2px solid #E0A93C";
+    try {
+      range.surroundContents(mark);
+    } catch {
+      continue;
+    }
+    mark.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => {
+      const parent = mark.parentNode;
+      if (!parent) return;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+    }, 2200);
+    return true;
+  }
+  return false;
 }
 
 function avgScore(meta: Record<string, { score?: number }> | null) {
@@ -229,7 +289,7 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
     ...Object.entries(p.seoMeta ?? {}).flatMap(([k, v]) =>
       (v.issues ?? []).map((issue) => ({ source: `SEO · ${k}`, issue })),
     ),
-  ];
+  ].map((item, i) => ({ ...item, id: i, phrase: extractFluffPhrase(item.issue) }));
 
   return (
     <div
@@ -247,72 +307,60 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
       />
 
       {/* Toolbar — height matches StudioShell rail logo cell (52px) */}
-      <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4">
+      <header className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-[var(--border)] bg-[var(--surface)] px-3">
+        <Link
+          href="/posts"
+          aria-label="목록으로"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#C2C2CC] hover:bg-[var(--background)] hover:text-[var(--muted)]"
+        >
+          <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={2} />
+        </Link>
         <input
-          className="min-h-[36px] min-w-0 flex-1 truncate border-0 bg-transparent py-1 text-[17px] font-bold leading-[1.2] text-[var(--foreground)] outline-none placeholder:font-semibold placeholder:text-[color:var(--faint)] md:text-[18px]"
+          className="min-h-[36px] min-w-0 flex-1 truncate border-0 bg-transparent py-1 text-[17.5px] font-bold leading-[1.2] tracking-[-.02em] text-[var(--foreground)] outline-none placeholder:font-semibold placeholder:text-[color:var(--faint)]"
           value={p.title}
           onChange={(e) => p.setTitle(e.target.value)}
-          placeholder="제목 (저장 시 반영)"
+          placeholder="제목을 입력하세요"
           disabled={p.bodyLocked}
         />
         {p.generateOpen ? (
           <span className="hidden shrink-0 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--accent)] md:inline">
             {p.generatePhaseLabel || "생성 중"}
           </span>
-        ) : null}
+        ) : (
+          <span className="hidden shrink-0 items-center gap-1 text-[11.5px] font-medium text-[var(--hint)] md:flex">
+            {p.autoSaving ? (
+              "저장 중…"
+            ) : p.autoSaveFailed ? (
+              <span className="text-[#C2453C]">자동 저장 실패</span>
+            ) : p.hasSavedOnce ? (
+              <>
+                <Check className="h-[13px] w-[13px]" strokeWidth={2.4} />
+                자동 저장됨
+              </>
+            ) : null}
+          </span>
+        )}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {p.post.brand.name ? (
+            <span className="hidden h-7 shrink-0 items-center rounded-[8px] bg-[#F0F0F3] px-2.5 text-[11.5px] font-semibold text-[var(--muted)] lg:flex">
+              {p.post.brand.name}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => p.setEditorTab(p.editorTab === "preview" ? "edit" : "preview")}
+            className="hidden h-8 shrink-0 items-center rounded-[8px] border border-[var(--border-strong)] px-3 text-[12px] font-semibold text-[#3A3A44] hover:bg-[var(--background)] sm:flex"
+          >
+            {p.editorTab === "preview" ? "편집" : "미리보기"}
+          </button>
           <button
             type="button"
             onClick={toggleTheme}
             title={theme === "dark" ? "라이트 모드" : "다크 모드"}
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] border border-[var(--border-strong)] text-[var(--muted)] hover:bg-[var(--background)]"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border-strong)] text-[var(--muted)] hover:bg-[var(--background)]"
           >
             {theme === "dark" ? <Sun className="h-[15px] w-[15px]" strokeWidth={1.8} /> : <Moon className="h-[15px] w-[15px]" strokeWidth={1.8} />}
           </button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={p.busy === "save" || p.bodyLocked}
-            onClick={() => void p.onSave()}
-          >
-            {p.busy === "save" ? "저장 중…" : "저장"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!p.canCopy || p.busy === "copy" || p.bodyLocked}
-            onClick={() => void p.onCopy()}
-          >
-            {p.busy === "copy" ? "복사 중…" : "본문 복사"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={p.busy === "status" || p.bodyLocked}
-            onClick={() => {
-              if (p.post.status === "published") {
-                void p.onSetStatus("draft");
-              } else {
-                p.setPublishModalOpen(true);
-              }
-            }}
-          >
-            {p.post.status === "published" ? "올림 취소" : "발행 표시"}
-          </Button>
-          <NewCutLink
-            brandId={p.post.brandId}
-            postId={p.post.id}
-            className={cn(
-              "inline-flex h-[30px] items-center rounded-[8px] px-3 text-[12px] font-medium",
-              p.showNewCutCta
-                ? "bg-[var(--accent)] text-white hover:opacity-90"
-                : "text-[color:var(--muted)] hover:bg-[var(--background)]",
-            )}
-          >
-            쇼츠
-          </NewCutLink>
         </div>
       </header>
 
@@ -386,8 +434,8 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
               <p className="text-lg font-semibold text-[var(--foreground)]">문서 캔버스</p>
               <p className="mt-2 max-w-md text-sm text-[var(--muted)]">
                 오른쪽 <strong>스타일</strong>에서 키워드를 확인한 뒤 초안을 만들면 여기에 본문이
-                채워집니다. 작업이 끝나면 상단의 <strong>저장</strong>·<strong>본문 복사</strong>를
-                사용하세요.
+                채워집니다. 작성 중에는 자동으로 저장되고, 준비되면 하단의{" "}
+                <strong>올리러 가기</strong>를 사용하세요.
               </p>
               <Button
                 type="button"
@@ -459,10 +507,7 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
               </div>
             </div>
           ) : (
-            <form
-              onSubmit={p.onSave}
-              className="mx-auto w-full max-w-[700px] rounded-xl border border-[var(--border)] bg-white shadow-[0_1px_3px_rgba(0,0,0,.04)] md:p-[38px_46px]"
-            >
+            <div className="mx-auto w-full max-w-[700px] rounded-xl border border-[var(--border)] bg-white shadow-[0_1px_3px_rgba(0,0,0,.04)] md:p-[38px_46px]">
               {p.post.brand.name ? (
                 <p className="mb-3.5 text-[11px] font-bold tracking-[.05em] text-[var(--accent)] md:mb-3.5">
                   {p.post.brand.name}
@@ -494,49 +539,13 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
                     className="rounded-none border-0"
                     stickyToolbar
                     headerSlot={
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex rounded-lg border border-[var(--border)] p-0.5 text-xs">
-                          <button
-                            type="button"
-                            className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-white"
-                            onClick={() => p.setEditorTab("edit")}
-                          >
-                            편집
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md px-3 py-1.5 text-[color:var(--muted)]"
-                            onClick={() => p.setEditorTab("preview")}
-                          >
-                            미리보기
-                          </button>
-                        </div>
-                        {p.statusHint ? (
-                          <p className="text-xs text-[color:var(--muted)]">{p.statusHint}</p>
-                        ) : null}
-                      </div>
+                      p.statusHint ? (
+                        <p className="text-xs text-[color:var(--muted)]">{p.statusHint}</p>
+                      ) : null
                     }
                   />
                 ) : (
                   <div className="space-y-0">
-                    <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-white px-3 py-2">
-                      <div className="flex rounded-lg border border-[var(--border)] p-0.5 text-xs">
-                        <button
-                          type="button"
-                          className="rounded-md px-3 py-1.5 text-[color:var(--muted)]"
-                          onClick={() => p.setEditorTab("edit")}
-                        >
-                          편집
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-white"
-                          onClick={() => p.setEditorTab("preview")}
-                        >
-                          미리보기
-                        </button>
-                      </div>
-                    </div>
                     <div
                       className="rich-doc min-h-[28rem] px-5 py-4 md:px-6"
                       dangerouslySetInnerHTML={{
@@ -558,44 +567,12 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
                       사진이 안 보이면 이미지 주소가 외부에서 열리는지 확인 (시연 서버가 꺼지면
                       사진도 안 들어갑니다)
                     </li>
-                    <li>올렸다면 상단 <strong>발행</strong>으로 기록</li>
+                    <li>올렸다면 하단 <strong>올리러 가기</strong>에서 완료로 기록</li>
                   </ol>
                 </div>
               ) : null}
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button type="submit" disabled={p.busy === "save" || p.bodyLocked}>
-                  {p.busy === "save" ? "저장 중…" : "저장"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={!p.canCopy || p.busy === "copy" || p.bodyLocked}
-                  onClick={() => void p.onCopy()}
-                >
-                  {p.busy === "copy" ? "복사 중…" : "본문 복사"}
-                </Button>
-                {p.post.status === "archived" ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={p.busy === "status"}
-                    onClick={() => void p.onSetStatus("draft")}
-                  >
-                    보관 해제
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={p.busy === "status"}
-                    onClick={() => void p.onSetStatus("archived")}
-                  >
-                    보관
-                  </Button>
-                )}
-              </div>
-            </form>
+            </div>
           )}
         </main>
 
@@ -632,51 +609,87 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
             {tab === "review" ? (
               seoScore === null && styleScore === null ? (
                 <p className="text-[12px] text-[var(--muted)]">
-                  초안을 생성하면 스타일·SEO 점수와 검수 항목이 여기에 표시됩니다.
+                  초안을 생성하면 말투·SEO 점수와 검수 항목이 여기에 표시됩니다.
                 </p>
               ) : (
                 <>
-                  {seoScore !== null ? (
-                    <div className="flex items-center gap-3.5 rounded-[11px] border border-[var(--border)] bg-[var(--surface-2)] p-3.5">
-                      <ScoreGauge score={seoScore} />
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-baseline gap-1">
-                          <span className="[font-variant-numeric:tabular-nums] text-[23px] font-bold text-[var(--foreground)]">
-                            {seoScore}
-                          </span>
-                          <span className="text-[12px] text-[var(--faint)]">/ 100</span>
-                        </div>
-                        <span className="text-[11.5px] font-semibold text-[var(--muted)]">검색 노출 점수 (SEO)</span>
+                  {styleScore !== null ? (
+                    <div className="flex items-center gap-3.5 rounded-[12px] border border-[var(--border)] bg-[var(--surface-2)] p-3.5">
+                      <ScoreGauge score={styleScore} />
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-[13.5px] font-bold text-[var(--foreground)]">
+                          내 말투와 {styleScore}% 일치
+                        </span>
+                        <span className="text-[11.5px] leading-[1.45] text-[var(--faint)]">
+                          {reviewIssues.filter((i) => i.source.startsWith("스타일")).length === 0
+                            ? "학습한 말투 규칙과 크게 어긋나는 부분이 없습니다."
+                            : "아래 확인 필요 항목에서 어긋난 부분을 짚었습니다."}
+                        </span>
                       </div>
                     </div>
                   ) : null}
-                  {styleScore !== null ? (
-                    <div className="flex items-center justify-between rounded-[11px] border border-[var(--border)] px-3.5 py-2.5 text-[12px]">
-                      <span className="text-[var(--muted)]">스타일 일치도</span>
-                      <span className="[font-variant-numeric:tabular-nums] font-bold text-[var(--foreground)]">{styleScore} / 100</span>
+                  {seoScore !== null ? (
+                    <div className="flex flex-col gap-1.5 rounded-[12px] border border-[var(--border)] px-3.5 py-3">
+                      <div className="flex items-center justify-between text-[12.5px]">
+                        <span className="text-[var(--muted)]">검색 노출 점수 (SEO)</span>
+                        <span className="[font-variant-numeric:tabular-nums] font-bold text-[var(--foreground)]">
+                          {seoScore}
+                        </span>
+                      </div>
+                      <div className="h-[5px] overflow-hidden rounded-full bg-[var(--surface-2)]">
+                        <div
+                          className="h-full rounded-full bg-[var(--accent)]"
+                          style={{ width: `${Math.min(100, Math.max(0, seoScore))}%` }}
+                        />
+                      </div>
                     </div>
                   ) : null}
+
                   <div className="flex flex-col gap-2">
-                    <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">체크리스트</span>
+                    <span className="text-[11px] font-bold tracking-[.04em] text-[var(--faint)]">
+                      확인 필요 {reviewIssues.length > 0 ? reviewIssues.length : ""}
+                    </span>
                     {reviewIssues.length === 0 ? (
-                      <p className="text-[12px] text-[var(--muted)]">발견된 이슈가 없습니다.</p>
+                      <div className="flex items-center gap-2 rounded-[9px] border border-[var(--border)] p-2.5 text-[12px] text-[var(--muted)]">
+                        <Check className="h-[14px] w-[14px] text-[#0F7B52]" strokeWidth={2.4} />
+                        확인이 필요한 항목이 없습니다.
+                      </div>
                     ) : (
-                      reviewIssues.map((item, i) => (
+                      reviewIssues.map((item) => (
                         <div
-                          key={i}
-                          className="flex items-start gap-2.5 rounded-[9px] border border-[var(--border)] p-2.5"
+                          key={item.id}
+                          className="flex flex-col gap-2 rounded-[11px] border border-[#F0DFB4] bg-[#FDF9EE] p-3"
                         >
-                          <span className="mt-0.5 flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-[#F4EDD8] text-[9px] font-extrabold text-[#8A6410]">
-                            !
-                          </span>
-                          <div className="flex min-w-0 flex-col gap-0.5">
-                            <span className="text-[12px] font-semibold text-[var(--foreground)]">{item.issue}</span>
-                            <span className="text-[10.5px] text-[var(--faint)]">{item.source}</span>
+                          <div className="flex items-start gap-2.5">
+                            <span className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-[#E0A93C] text-[10.5px] font-bold text-white">
+                              !
+                            </span>
+                            <div className="flex min-w-0 flex-col gap-0.5">
+                              <span className="text-[12.5px] font-semibold text-[#6B4E10]">{item.issue}</span>
+                              <span className="text-[11px] text-[#9C9CA6]">{item.source}</span>
+                            </div>
                           </div>
+                          {item.phrase ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!scrollToPhrase(p.resultRef, item.phrase!)) {
+                                  setTab("style");
+                                }
+                              }}
+                              className="flex h-[26px] w-fit items-center rounded-[7px] bg-[#16161A] px-2.5 text-[11px] font-semibold text-white"
+                            >
+                              문장으로 가기
+                            </button>
+                          ) : null}
                         </div>
                       ))
                     )}
                   </div>
+                  <p className="text-[10.5px] leading-[1.5] text-[var(--hint)]">
+                    ⚠️ 검수 항목의 기준은 아직 서비스 정책으로 확정되지 않았습니다 — 지금은 학습
+                    말투 규칙(금지 표현·이모지 밀도 등) 위반만 짚습니다.
+                  </p>
                 </>
               )
             ) : null}
@@ -939,25 +952,6 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
           </div>
 
           <div className="shrink-0 space-y-1.5 border-t border-[var(--border)] p-3">
-            <div className="flex gap-1.5">
-              <Button
-                type="button"
-                className="flex-1"
-                disabled={p.busy === "save" || p.bodyLocked}
-                onClick={() => void p.onSave()}
-              >
-                {p.busy === "save" ? "저장 중…" : "저장"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                disabled={!p.canCopy || p.busy === "copy" || p.bodyLocked}
-                onClick={() => void p.onCopy()}
-              >
-                {p.busy === "copy" ? "복사 중…" : "본문 복사"}
-              </Button>
-            </div>
             {tab !== "style" ? (
               <p className="text-[10px] leading-snug text-[color:var(--muted)]">
                 초안을 다시 만들려면{" "}
@@ -975,54 +969,189 @@ export function PostWorkspaceStudioView(p: PostWorkspaceStudioViewProps) {
         </aside>
       </div>
 
+      {/* Consolidated bottom action bar — one place for publish-related actions */}
+      <div className="flex h-[68px] shrink-0 items-center gap-3 border-t border-[var(--border)] bg-[var(--surface)] px-5">
+        <span className="hidden text-[12px] text-[var(--faint)] [font-variant-numeric:tabular-nums] sm:inline">
+          {p.charCount.toLocaleString()}자 · 사진 {p.post.images.length} · 예상 읽기 {p.readMinutes}분
+        </span>
+        <button
+          type="button"
+          onClick={() =>
+            void p.onSetStatus(p.post.status === "archived" ? "draft" : "archived")
+          }
+          disabled={p.busy === "status"}
+          className="ml-1 text-[12px] font-semibold text-[var(--faint)] hover:text-[var(--muted)] disabled:opacity-50"
+        >
+          {p.post.status === "archived" ? "보관 해제" : "보관"}
+        </button>
+        <div className="flex-1" />
+        <NewCutLink
+          brandId={p.post.brandId}
+          postId={p.post.id}
+          className={cn(
+            "flex h-[42px] items-center gap-1.5 rounded-[11px] border border-[#E0E0E6] px-4 text-[13px] font-semibold text-[#3A3A44] hover:bg-[var(--background)]",
+            p.showNewCutCta && "border-[var(--accent)] text-[var(--accent)]",
+          )}
+        >
+          <Clapperboard className="h-4 w-4" strokeWidth={1.8} />
+          쇼츠로 잇기
+        </NewCutLink>
+        {p.post.status === "published" ? (
+          <button
+            type="button"
+            onClick={() => void p.onSetStatus("draft")}
+            disabled={p.busy === "status"}
+            className="flex h-[42px] items-center rounded-[11px] border border-[#E0E0E6] px-5 text-[14px] font-semibold text-[#3A3A44] disabled:opacity-50"
+          >
+            올림 취소
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={p.onOpenPublish}
+            disabled={!p.canCopy || p.busy === "copy" || p.bodyLocked}
+            className="flex h-[42px] items-center gap-1.5 rounded-[11px] bg-[var(--accent)] px-5 text-[14px] font-semibold text-white shadow-[0_2px_6px_rgba(75,59,255,.35)] disabled:opacity-50"
+          >
+            {p.busy === "copy" ? "복사하는 중…" : "올리러 가기"}
+            <ArrowRight className="h-[17px] w-[17px]" strokeWidth={2} />
+          </button>
+        )}
+      </div>
+
       {p.publishModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md space-y-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-lg">
-            <p className="text-sm font-semibold">올린 글 URL (선택)</p>
-            <p className="text-xs text-[color:var(--muted)]">
-              외부에 직접 올린 뒤 여기서 완료로 표시합니다.
-            </p>
-            <select
-              className="flex h-10 w-full rounded-md border border-[var(--border)] px-3 text-sm"
-              value={p.publishPlatform}
-              onChange={(e) =>
-                p.setPublishPlatform(e.target.value as "naver" | "tistory" | "other")
-              }
-            >
-              <option value="naver">네이버</option>
-              <option value="tistory">티스토리</option>
-              <option value="other">기타</option>
-            </select>
-            <Input
-              value={p.publishUrlInput}
-              onChange={(e) => p.setPublishUrlInput(e.target.value)}
-              placeholder="https://"
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(22,22,26,.42)] p-4">
+          <div className="flex w-full max-w-[560px] flex-col rounded-[18px] bg-white shadow-[0_24px_60px_rgba(22,22,26,.28)]">
+            <div className="flex items-start gap-3 px-[26px] pt-[22px]">
+              <div className="flex flex-1 flex-col gap-1">
+                <h3 className="text-[20px] font-bold tracking-[-.02em] text-[var(--foreground)]">
+                  올릴 준비가 됐습니다
+                </h3>
+                <p className="text-[13px] text-[#6B6B75]">
+                  제목·본문·사진 {p.post.images.length}장이 클립보드에 복사됐습니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => p.setPublishModalOpen(false)}
+                className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] text-[var(--faint)] hover:bg-[var(--background)]"
+                aria-label="닫기"
+              >
+                <X className="h-4 w-4" strokeWidth={2} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3.5 px-[26px] pt-5">
+              <div className="flex items-center gap-3 rounded-[12px] bg-[#E7F5EF] p-[14px_15px]">
+                <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-[#0F7B52]">
+                  <Check className="h-[15px] w-[15px] text-white" strokeWidth={2.4} />
+                </span>
+                <span className="text-[13.5px] font-semibold text-[#0F7B52]">
+                  복사 완료 — 붙여넣기만 하면 됩니다
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <span className="text-[12.5px] font-semibold text-[#6B6B75]">
+                  어디에 올리시나요?
+                </span>
+                <div className="flex gap-2">
+                  {(
+                    [
+                      ["naver", "네이버 블로그"],
+                      ["tistory", "티스토리"],
+                      ["other", "그 외"],
+                    ] as const
+                  ).map(([id, label]) => {
+                    const selected = p.publishPlatform === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => p.setPublishPlatform(id)}
+                        className={cn(
+                          "flex h-[46px] flex-1 items-center justify-center rounded-[11px] text-[13.5px]",
+                          selected
+                            ? "border-[1.5px] border-[var(--accent)] bg-[#F7F6FF] font-semibold text-[var(--accent)]"
+                            : "border border-[#E0E0E6] font-medium text-[#3A3A44]",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  p.publishPlatform === "naver"
+                    ? window.open(NAVER_WRITE_URL, "_blank", "noopener,noreferrer")
+                    : undefined
+                }
+                className="flex h-[52px] items-center justify-center gap-2 rounded-[12px] bg-[var(--accent)] text-[15px] font-semibold text-white shadow-[0_2px_8px_rgba(75,59,255,.34)]"
+              >
+                {p.publishPlatform === "naver"
+                  ? "네이버 글쓰기 열고 붙여넣기"
+                  : "복사 완료 — 사용 중인 서비스에서 붙여넣기"}
+                <ArrowRight className="h-[18px] w-[18px]" strokeWidth={2} />
+              </button>
+
+              <div className="h-px bg-[#F0F0F3]" />
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12.5px] font-semibold text-[#6B6B75]">
+                    올린 뒤, 글 주소를 여기에
+                  </span>
+                  <span className="flex h-[19px] items-center rounded-[5px] bg-[#F0F0F3] px-[7px] text-[10px] font-bold text-[#8A8A94]">
+                    선택
+                  </span>
+                </div>
+                <input
+                  value={p.publishUrlInput}
+                  onChange={(e) => p.setPublishUrlInput(e.target.value)}
+                  placeholder="blog.naver.com/..."
+                  className="h-[46px] rounded-[11px] border border-[#E0E0E6] px-3.5 text-[13.5px] text-[var(--foreground)] outline-none placeholder:text-[#B4B4BE] focus:border-[var(--accent)]"
+                />
+                <div className="flex items-start gap-2 rounded-[11px] border border-[#F0F0F3] bg-[var(--surface-2)] p-3">
+                  <Palette className="mt-px h-[15px] w-[15px] shrink-0 text-[var(--accent)]" strokeWidth={1.9} />
+                  <span className="text-[12px] leading-[1.55] text-[#6B6B75]">
+                    주소를 넣으면 <strong className="font-semibold">실제로 올린 최종본</strong>을
+                    읽어 말투를 다시 학습합니다. 직접 고친 부분까지 반영돼 다음 글이 더 비슷해집니다.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 px-[26px] pb-[22px] pt-5">
+              <button
                 type="button"
                 disabled={p.busy === "status"}
-                onClick={() =>
-                  void p.onSetStatus("published", {
-                    publishedUrl: p.publishUrlInput || undefined,
-                    publishPlatform: p.publishPlatform,
-                  })
-                }
+                onClick={() => void p.onSetStatus("published", { skipUrl: true })}
+                className="text-[13px] font-semibold text-[#8A8A94] disabled:opacity-50"
               >
-                올림 표시
-              </Button>
-              <Button
+                주소는 나중에
+              </button>
+              <div className="flex-1" />
+              <button
                 type="button"
-                variant="outline"
-                onClick={() => p.setPublishModalOpen(false)}
+                disabled={p.busy === "status"}
+                onClick={() => {
+                  void (async () => {
+                    let url = p.publishUrlInput.trim();
+                    if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+                    await p.onSetStatus("published", {
+                      publishedUrl: url || undefined,
+                      publishPlatform: p.publishPlatform,
+                    });
+                    if (url) p.onLearnPublish();
+                  })();
+                }}
+                className="flex h-[44px] items-center rounded-[11px] bg-[#16161A] px-5 text-[14px] font-semibold text-white disabled:opacity-60"
               >
-                닫기
-              </Button>
-              {p.post.status === "published" ? (
-                <Button type="button" variant="ghost" onClick={() => void p.onLearnPublish()}>
-                  스타일 학습에 추가
-                </Button>
-              ) : null}
+                {p.busy === "status" ? "기록하는 중…" : "올림 완료로 기록"}
+              </button>
             </div>
           </div>
         </div>

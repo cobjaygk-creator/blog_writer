@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { copyHtmlForBlogEditor } from "@/lib/clipboard";
-import { ensureImagesInHtml, htmlToPlainText, toEditorHtml } from "@/lib/content";
+import { ensureImagesInHtml, htmlToPlainText, plainTextLength, toEditorHtml } from "@/lib/content";
 import {
   BRAND_CAPTION_TONE,
   captionToneOptions,
@@ -298,6 +298,32 @@ export function PostWorkspace({
     (post.status === "draft" || (isCollecting && hasBodyText)) &&
     hasBodyText &&
     !needsSelection;
+
+  const charCount = plainTextLength(body);
+  // Rough Korean reading-speed estimate (~500 characters/minute) — not a measured value.
+  const readMinutes = charCount > 0 ? Math.max(1, Math.round(charCount / 500)) : 0;
+
+  // Auto-save: 3a drops the manual save button in favor of a debounced PATCH.
+  const [hasSavedOnce, setHasSavedOnce] = useState(false);
+  const [autoSaveFailed, setAutoSaveFailed] = useState(false);
+  const skipNextAutoSaveRef = useRef(true);
+  useEffect(() => {
+    if (skipNextAutoSaveRef.current) {
+      skipNextAutoSaveRef.current = false;
+      return;
+    }
+    if (bodyLocked || needsSelection || busy) return;
+    const timer = setTimeout(() => {
+      void saveDraft({ preventDefault() {} } as FormEvent, { silent: true });
+    }, 1200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, body]);
+
+  async function openPublishSheet() {
+    await copyForPublish();
+    void setStatus("published");
+  }
 
   function applyBodyHtml(html: string) {
     const next = ensureImagesInHtml(html, imageInputs(post.images), {
@@ -901,7 +927,7 @@ export function PostWorkspace({
     }
   }
 
-  async function saveDraft(event: FormEvent) {
+  async function saveDraft(event: FormEvent, options?: { silent?: boolean }) {
     event.preventDefault();
     setBusy("save");
     setError(null);
@@ -919,14 +945,17 @@ export function PostWorkspace({
     const data = (await res.json().catch(() => ({}))) as { error?: string; post?: PostData };
     setBusy(null);
     if (!res.ok || !data.post) {
-      setError(data.error || "저장 실패");
+      setAutoSaveFailed(true);
+      if (!options?.silent) setError(data.error || "저장 실패");
       return;
     }
     setPost(data.post);
     if (data.post.productHighlights !== undefined) {
       setProductHighlights(data.post.productHighlights || "");
     }
-    router.refresh();
+    setHasSavedOnce(true);
+    setAutoSaveFailed(false);
+    if (!options?.silent) router.refresh();
   }
 
   async function setStatus(
@@ -1060,6 +1089,11 @@ export function PostWorkspace({
         setPublishPlatform={setPublishPlatform}
         styleMeta={styleMeta}
         seoMeta={seoMeta}
+        hasSavedOnce={hasSavedOnce}
+        autoSaveFailed={autoSaveFailed}
+        autoSaving={busy === "save"}
+        charCount={charCount}
+        readMinutes={readMinutes}
         generateOpen={generateOpen}
         generatePhaseLabel={generatePhaseLabel}
         generateRange={generateRange}
@@ -1086,8 +1120,9 @@ export function PostWorkspace({
         onSyncImages={() => void syncImagesIntoBody()}
         onSaveTemplateSelection={(h, f) => void saveTemplateSelection(h, f)}
         onApplyTemplates={() => void applySelectedTemplates()}
-        onSetStatus={(status, opts) => void setStatus(status, opts)}
+        onSetStatus={(status, opts) => setStatus(status, opts)}
         onLearnPublish={() => void learnFromPublished()}
+        onOpenPublish={() => void openPublishSheet()}
       />
     );
   }
