@@ -1,8 +1,9 @@
 "use client";
 
+import { ChevronLeft, Plus, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { NewCutLink } from "@/components/NewCutLink";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ import {
   type StyleRuleKey,
 } from "@/lib/style-rules";
 import { normalizeExtendedTraits } from "@/lib/style-traits";
+import { cn } from "@/lib/utils";
 
 type SourcePost = {
   id: string;
@@ -68,22 +70,35 @@ function shortDate(iso: string) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-function intensity(label: string) {
-  if (/많음|자주|높음|길게|중장문/.test(label)) return 80;
-  if (/중간|보통/.test(label)) return 55;
-  if (/적음|낮음|짧|거의 없음|사용 안 함|없음/.test(label)) return 22;
-  return 50;
-}
-
-function firstExcerpt(anchors: unknown): string | null {
-  if (!Array.isArray(anchors)) return null;
-  for (const a of anchors) {
-    if (a && typeof a === "object" && "excerpt" in a) {
-      const excerpt = (a as { excerpt?: unknown }).excerpt;
-      if (typeof excerpt === "string" && excerpt.trim()) return excerpt.trim();
-    }
-  }
-  return null;
+function Switch({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "relative h-5 w-[34px] shrink-0 rounded-full transition-colors disabled:opacity-50",
+        checked ? "bg-[var(--accent)]" : "bg-[#E0E0E6]",
+      )}
+    >
+      <span
+        className={cn(
+          "absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.2)] transition-all",
+          checked ? "right-0.5" : "left-0.5",
+        )}
+      />
+    </button>
+  );
 }
 
 export function BrandWorkspace({
@@ -92,12 +107,14 @@ export function BrandWorkspace({
   initialSources,
   initialStyle,
   initialPosts,
+  styleMatch,
 }: {
   brandId: string;
   brandName: string;
   initialSources: SourcePost[];
   initialStyle: StyleProfile;
   initialPosts: PostSummary[];
+  styleMatch: { score: number; sampleCount: number } | null;
 }) {
   const router = useRouter();
   const [name, setName] = useState(brandName);
@@ -114,6 +131,30 @@ export function BrandWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [ruleBusy, setRuleBusy] = useState<StyleRuleKey | null>(null);
+  const [sample, setSample] = useState<string | null>(null);
+  const [sampleBusy, setSampleBusy] = useState(false);
+
+  useEffect(() => {
+    if (!style) return;
+    let cancelled = false;
+    void (async () => {
+      setSampleBusy(true);
+      setSample(null);
+      try {
+        const res = await fetch(`/api/brands/${brandId}/style/sample`, { method: "POST" });
+        const data = (await res.json().catch(() => ({}))) as { sentence?: string };
+        if (!cancelled) setSample(data.sentence || null);
+      } catch {
+        if (!cancelled) setSample(null);
+      } finally {
+        if (!cancelled) setSampleBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [style?.version]);
 
   async function renameBrand(event: FormEvent) {
     event.preventDefault();
@@ -245,7 +286,7 @@ export function BrandWorkspace({
     };
     setBusy(null);
     if (!res.ok || !data.styleProfile) {
-      setError(data.error || "스타일 학습 실패");
+      setError(data.error || "말투 학습 실패");
       return;
     }
     setStyle(data.styleProfile);
@@ -253,7 +294,7 @@ export function BrandWorkspace({
   }
 
   async function deleteBrand() {
-    if (!confirm("테마를 삭제하면 원문·스타일·글이 모두 삭제됩니다. 계속할까요?")) return;
+    if (!confirm("말투를 삭제하면 원문·학습 결과·글이 모두 삭제됩니다. 계속할까요?")) return;
     setBusy("delete");
     const res = await fetch(`/api/brands/${brandId}`, { method: "DELETE" });
     setBusy(null);
@@ -283,7 +324,6 @@ export function BrandWorkspace({
   }
 
   const traits = style ? normalizeExtendedTraits(style.traitsJson) : null;
-  const sampleQuote = style ? firstExcerpt(style.sampleAnchors) : null;
   const chips = traits?.domainTerms?.length ? traits.domainTerms : traits?.commonPhrases ?? [];
   const avgChars = sources.length
     ? Math.round(sources.reduce((sum, s) => sum + s.rawText.length, 0) / sources.length)
@@ -291,7 +331,14 @@ export function BrandWorkspace({
 
   return (
     <div className="flex min-w-0 flex-col">
-      <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-[var(--border)] px-[22px]">
+      <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-[var(--border)] px-[18px]">
+        <Link
+          href="/brands"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#C2C2CC] hover:bg-[var(--background)] hover:text-[var(--muted)]"
+          aria-label="말투 목록으로"
+        >
+          <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={2} />
+        </Link>
         {editingName ? (
           <form onSubmit={renameBrand} className="flex items-center gap-2">
             <input
@@ -299,7 +346,7 @@ export function BrandWorkspace({
               onChange={(e) => setName(e.target.value)}
               maxLength={80}
               autoFocus
-              className="h-7 rounded-[6px] border border-[var(--border-strong)] px-2 text-[14px] font-bold text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+              className="h-7 rounded-[6px] border border-[var(--border-strong)] px-2 text-[15px] font-bold text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
             />
             <Button type="submit" size="sm" disabled={busy === "rename"}>
               저장
@@ -313,17 +360,18 @@ export function BrandWorkspace({
             <button
               type="button"
               onClick={() => setEditingName(true)}
-              className="text-[14px] font-bold tracking-[-.015em] text-[var(--foreground)] hover:text-[var(--accent)]"
+              className="text-[15px] font-bold tracking-[-.015em] text-[var(--foreground)] hover:text-[var(--accent)]"
               title="이름 변경"
             >
               {name}
             </button>
             {style ? (
               <>
-                <Badge variant="success">학습 완료 v{style.version}</Badge>
-                <span className="text-[11.5px] text-[var(--faint)]">
-                  마지막 학습 {new Date(style.updatedAt).toLocaleDateString("ko-KR")} · 원문{" "}
-                  {sources.length}편
+                <span className="flex h-5 items-center rounded-[5px] bg-[var(--accent-soft)] px-2 text-[10.5px] font-bold text-[var(--accent)]">
+                  v{style.version} 학습됨
+                </span>
+                <span className="text-[11.5px] text-[var(--hint)]">
+                  원문 {sources.length}편 · {new Date(style.updatedAt).toLocaleDateString("ko-KR")} 갱신
                 </span>
               </>
             ) : (
@@ -332,17 +380,21 @@ export function BrandWorkspace({
           </>
         )}
         <div className="flex-1" />
-        <Button type="button" size="sm" variant="outline" onClick={() => setShowSourceForm((v) => !v)}>
-          {showSourceForm ? "원문 추가 닫기" : "원문 추가"}
-        </Button>
+        {style ? (
+          <Link href={`/posts/new?brandId=${brandId}`}>
+            <Button type="button" size="sm" variant="outline">
+              이 말투로 새 글
+            </Button>
+          </Link>
+        ) : null}
         <Button
           type="button"
           size="sm"
-          variant="dark"
           onClick={() => void learnStyle()}
           disabled={busy === "learn" || sources.length === 0}
         >
-          {busy === "learn" ? "학습 중…" : style ? "다시 학습" : "문체 학습"}
+          <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+          {busy === "learn" ? "학습 중…" : style ? "다시 학습" : "말투 학습"}
         </Button>
       </div>
 
@@ -355,152 +407,148 @@ export function BrandWorkspace({
         </div>
       ) : null}
 
-      {showSourceForm ? (
-        <div className="border-b border-[var(--border)] bg-white px-[22px] py-4">
-          <div className="mb-3 flex gap-[2px] rounded-[8px] bg-[var(--surface-2)] p-[3px]" style={{ width: "fit-content" }}>
-            {(
-              [
-                ["bulk", "블로그 일괄"],
-                ["url", "URL"],
-                ["text", "붙여넣기"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setSourceMode(id)}
-                className={
-                  sourceMode === id
-                    ? "flex h-7 items-center rounded-[6px] bg-white px-3 text-[12px] font-semibold text-[var(--foreground)] shadow-[0_1px_2px_rgba(0,0,0,.06)]"
-                    : "flex h-7 items-center rounded-[6px] px-3 text-[12px] font-medium text-[#8A8A94]"
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+      <div className="grid grid-cols-[1fr_372px] gap-4 p-[22px]">
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* 예시 카드 — 실제 생성 결과 */}
+          {style ? (
+            <div className="rounded-[13px] border border-[var(--border)] bg-white p-[18px_20px]">
+              <div className="flex items-center">
+                <span className="text-[13.5px] font-bold text-[var(--foreground)]">
+                  이 말투로 쓰면 이렇게 나옵니다
+                </span>
+                <span className="ml-auto text-[11.5px] text-[var(--hint)]">
+                  원문 {sources.length}편에서 학습
+                </span>
+              </div>
+              <p className="mt-2.5 text-[15px] leading-[1.75] text-[#3f3f46]">
+                {sampleBusy ? "예시 문장을 쓰는 중…" : sample || "예시를 불러오지 못했습니다."}
+              </p>
+              {chips.length ? (
+                <div className="mt-3 flex flex-wrap gap-[6px]">
+                  {chips.slice(0, 8).map((c) => (
+                    <span
+                      key={c}
+                      className="flex h-[26px] items-center rounded-[7px] bg-[#F0F0F3] px-2.5 text-[11.5px] font-semibold text-[#6B6B75]"
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
-          {sourceMode === "bulk" ? (
-            <form onSubmit={bulkImport} className="space-y-3">
-              <Label>
-                <span>네이버 블로그 URL</span>
-                <Input
+          {/* 원문 목록 카드 */}
+          <div className="flex flex-col overflow-hidden rounded-[13px] border border-[var(--border)] bg-white">
+            <div className="flex h-[46px] shrink-0 items-center px-4">
+              <span className="text-[12.5px] font-bold text-[var(--foreground)]">학습에 쓴 원문</span>
+              <span className="[font-variant-numeric:tabular-nums] ml-2 text-[11px] text-[var(--faint)]">
+                {sources.length}편{sources.length ? ` · 평균 ${avgChars.toLocaleString()}자` : ""}
+              </span>
+              <div className="flex-1" />
+              <Button type="button" size="sm" variant="dark" onClick={() => setShowSourceForm((v) => !v)}>
+                {showSourceForm ? "닫기" : "원문 추가"}
+              </Button>
+            </div>
+
+            {/* 일괄 가져오기 배너 — 강조 위치, 항상 노출 */}
+            <div className="flex items-center gap-3 border-b border-t border-[#F0F0F3] bg-[#F7F6FF] px-4 py-[13px]">
+              <Sparkles className="h-[17px] w-[17px] shrink-0 text-[var(--accent)]" strokeWidth={1.8} />
+              <div className="flex min-w-0 flex-col">
+                <span className="text-[12.5px] font-semibold text-[var(--accent)]">
+                  블로그 주소만 넣으면 최대 100편을 한번에 가져옵니다
+                </span>
+                <span className="text-[11.5px] text-[#6B5FD6]">한 편씩 붙여넣지 않아도 됩니다.</span>
+              </div>
+              <form
+                onSubmit={bulkImport}
+                className="ml-auto flex shrink-0 items-center gap-1.5"
+              >
+                <input
                   type="url"
                   required
                   value={blogUrl}
                   onChange={(e) => setBlogUrl(e.target.value)}
-                  placeholder="https://blog.naver.com/블로그ID"
+                  placeholder="blog.naver.com/..."
                   disabled={busy === "bulk"}
+                  className="h-[30px] w-[160px] rounded-[8px] border border-[#D9D4FF] bg-white px-2.5 text-[11.5px] outline-none placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
                 />
-                <span className="block text-xs font-normal text-[color:var(--muted)]">
-                  최신 공개글 최대 100개를 가져와 원문으로 저장하고, 말투·용어·제품·편집 습관을 심화
-                  학습합니다. 본인 운영 블로그의 공개글만 사용해 주세요.
-                </span>
-              </Label>
-              <Button type="submit" disabled={busy === "bulk" || !blogUrl.trim()}>
-                {busy === "bulk"
-                  ? importProgress?.status === "learning"
-                    ? "문체 학습 중…"
-                    : importProgress
-                      ? `가져오는 중… ${importProgress.fetchedCount + importProgress.skippedCount + importProgress.failedCount}/${importProgress.targetCount}`
-                      : "목록 수집 중…"
-                  : "일괄 가져오기 + 학습"}
-              </Button>
-              {importProgress ? (
-                <p className="text-xs text-[color:var(--muted)]">
-                  성공 {importProgress.fetchedCount} · 중복/스킵 {importProgress.skippedCount} · 실패{" "}
-                  {importProgress.failedCount}
-                  {importProgress.status === "completed" ? " · 완료" : ""}
-                </p>
-              ) : null}
-            </form>
-          ) : (
-            <form onSubmit={addSource} className="space-y-3">
-              {sourceMode === "url" ? (
-                <Label>
-                  <span>블로그 글 URL</span>
-                  <Input
-                    type="url"
-                    required
-                    value={sourceUrl}
-                    onChange={(e) => setSourceUrl(e.target.value)}
-                    placeholder="https://blog.naver.com/... 또는 일반 블로그 URL"
-                  />
-                </Label>
-              ) : (
-                <Label>
-                  <span>기존 블로그 글 (문체 학습용)</span>
-                  <Textarea
-                    rows={6}
-                    value={rawText}
-                    onChange={(e) => setRawText(e.target.value)}
-                    placeholder="테마 톤이 잘 드러나는 글을 붙여넣으세요 (20자 이상)"
-                  />
-                </Label>
-              )}
-              <Button
-                type="submit"
-                disabled={
-                  busy === "source" ||
-                  (sourceMode === "url" ? !sourceUrl.trim() : rawText.trim().length < 20)
-                }
-              >
-                {busy === "source" ? (sourceMode === "url" ? "가져오는 중…" : "등록 중…") : "원문 추가"}
-              </Button>
-            </form>
-          )}
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-[1fr_320px] gap-4 p-[22px]">
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="rounded-[11px] border border-[var(--border)] bg-white p-[17px_18px]">
-            <div className="flex items-center">
-              <span className="text-[12.5px] font-bold text-[var(--foreground)]">학습된 문체 규칙</span>
-              <span className="ml-auto text-[11px] text-[var(--faint)]">체크를 끄면 생성에서 제외됩니다</span>
+                <button
+                  type="submit"
+                  disabled={busy === "bulk" || !blogUrl.trim()}
+                  className="flex h-[30px] shrink-0 items-center rounded-[8px] bg-[var(--accent)] px-3 text-[11.5px] font-semibold text-white disabled:opacity-50"
+                >
+                  {busy === "bulk"
+                    ? importProgress?.status === "learning"
+                      ? "학습 중…"
+                      : importProgress
+                        ? `가져오는 중 ${importProgress.fetchedCount + importProgress.skippedCount + importProgress.failedCount}/${importProgress.targetCount}`
+                        : "수집 중…"
+                    : "주소로 가져오기"}
+                </button>
+              </form>
             </div>
-            {!style ? (
-              <p className="mt-3 text-[12px] text-[var(--muted)]">
-                문체 학습이 끝나면 이 테마의 규칙이 여기에 표시됩니다.
-              </p>
-            ) : (
-              <div className="mt-3.5 grid grid-cols-2 gap-2.5">
-                {STYLE_RULE_KEYS.map((key) => {
-                  const active = isRuleActive(style.traitsJson, key);
-                  return (
-                    <label
-                      key={key}
-                      className="flex items-start gap-2.5 rounded-[9px] border border-[#EFEFF2] bg-[#FBFBFC] p-[11px_12px]"
+
+            {showSourceForm ? (
+              <div className="border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-3.5">
+                <div className="mb-2.5 flex gap-[2px] rounded-[8px] bg-white p-[3px]" style={{ width: "fit-content" }}>
+                  {(
+                    [
+                      ["url", "URL"],
+                      ["text", "붙여넣기"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setSourceMode(id)}
+                      className={
+                        sourceMode === id
+                          ? "flex h-7 items-center rounded-[6px] bg-[var(--accent-soft)] px-3 text-[12px] font-semibold text-[var(--accent)]"
+                          : "flex h-7 items-center rounded-[6px] px-3 text-[12px] font-medium text-[#8A8A94]"
+                      }
                     >
-                      <input
-                        type="checkbox"
-                        checked={active}
-                        disabled={ruleBusy === key}
-                        onChange={(e) => void toggleRule(key, e.target.checked)}
-                        className="mt-0.5 h-[15px] w-[15px] shrink-0 rounded-[4px] border-[var(--border-strong)]"
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <form onSubmit={addSource} className="space-y-2.5">
+                  {sourceMode === "url" ? (
+                    <Label>
+                      <span>블로그 글 URL</span>
+                      <Input
+                        type="url"
+                        required
+                        value={sourceUrl}
+                        onChange={(e) => setSourceUrl(e.target.value)}
+                        placeholder="https://blog.naver.com/... 또는 일반 블로그 URL"
                       />
-                      <div className="flex min-w-0 flex-col gap-0.5">
-                        <span className="text-[12px] font-semibold text-[var(--foreground)]">
-                          {ruleTitle(key)}
-                        </span>
-                        <span className="text-[10.5px] leading-[1.5] text-[var(--faint)]">
-                          {ruleDescription(key, style.traitsJson)}
-                        </span>
-                      </div>
-                    </label>
-                  );
-                })}
+                    </Label>
+                  ) : (
+                    <Label>
+                      <span>기존 블로그 글 (말투 학습용)</span>
+                      <Textarea
+                        rows={5}
+                        value={rawText}
+                        onChange={(e) => setRawText(e.target.value)}
+                        placeholder="말투가 잘 드러나는 글을 붙여넣으세요 (20자 이상)"
+                      />
+                    </Label>
+                  )}
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={
+                      busy === "source" ||
+                      (sourceMode === "url" ? !sourceUrl.trim() : rawText.trim().length < 20)
+                    }
+                  >
+                    {busy === "source" ? (sourceMode === "url" ? "가져오는 중…" : "등록 중…") : "원문 추가"}
+                  </Button>
+                </form>
               </div>
-            )}
-          </div>
+            ) : null}
 
-          <div className="flex flex-col overflow-hidden rounded-[11px] border border-[var(--border)] bg-white">
-            <div className="flex h-10 shrink-0 items-center border-b border-[var(--border)] px-4">
-              <span className="text-[12.5px] font-bold text-[var(--foreground)]">학습 원문</span>
-              <span className="[font-variant-numeric:tabular-nums] ml-auto text-[11px] text-[var(--faint)]">
-                {sources.length}편{sources.length ? ` · 평균 ${avgChars.toLocaleString()}자` : ""}
-              </span>
-            </div>
             {sources.length === 0 ? (
               <p className="px-4 py-8 text-center text-[12px] text-[var(--muted)]">
                 등록된 원문이 없습니다.
@@ -509,26 +557,21 @@ export function BrandWorkspace({
               sources.map((s) => (
                 <div
                   key={s.id}
-                  className="grid h-[46px] items-center gap-0 border-b border-[#F4F4F6] px-4 last:border-b-0 hover:bg-[var(--surface-2)]"
-                  style={{ gridTemplateColumns: "1fr 96px 74px 62px 44px" }}
+                  className="flex items-center gap-3 border-b border-[#F4F4F6] px-4 py-3 last:border-b-0 hover:bg-[var(--surface-2)]"
                 >
-                  <span className="truncate pr-2.5 text-[12.5px] font-semibold text-[var(--foreground)]">
-                    {s.title || "(제목 없음)"}
-                  </span>
-                  <span className="truncate pr-2 text-[11px] text-[var(--faint)]">
-                    {sourceLabel(s.sourceUrl)}
-                  </span>
-                  <span className="[font-variant-numeric:tabular-nums] text-right text-[11.5px] text-[var(--muted)]">
-                    {s.rawText.length.toLocaleString()}
-                  </span>
-                  <span className="[font-variant-numeric:tabular-nums] text-right text-[11px] text-[var(--faint)]">
-                    {shortDate(s.createdAt)}
-                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-[12.5px] font-semibold text-[var(--foreground)]">
+                      {s.title || "(제목 없음)"}
+                    </span>
+                    <span className="[font-variant-numeric:tabular-nums] truncate text-[11px] text-[#9C9CA6]">
+                      {sourceLabel(s.sourceUrl)} · {s.rawText.length.toLocaleString()}자 · {shortDate(s.createdAt)}
+                    </span>
+                  </div>
                   <button
                     type="button"
                     disabled={busy === `del-${s.id}`}
                     onClick={() => void removeSource(s.id)}
-                    className="justify-self-end text-[11px] font-medium text-[var(--faint)] hover:text-[#C2453C] disabled:opacity-40"
+                    className="shrink-0 text-[11px] font-medium text-[var(--faint)] hover:text-[#C2453C] disabled:opacity-40"
                   >
                     삭제
                   </button>
@@ -538,60 +581,68 @@ export function BrandWorkspace({
           </div>
         </div>
 
+        {/* 우측 패널 — 배운 것 중에 끌 것 */}
         <div className="flex flex-col gap-3.5">
-          <div className="rounded-[11px] border border-[var(--border)] bg-white p-4">
-            <span className="text-[12.5px] font-bold text-[var(--foreground)]">문체 지문</span>
-            {!traits ? (
-              <p className="mt-2 text-[12px] text-[var(--muted)]">학습 후 표시됩니다.</p>
-            ) : (
-              <div className="mt-3 flex flex-col gap-2.5">
-                {(
-                  [
-                    ["문장 길이", traits.sentenceLength],
-                    ["이모지 사용", traits.emojiUsage],
-                    ["줄바꿈 리듬", traits.lineBreakStyle],
-                    ["강조 방식", traits.emphasisStyle],
-                  ] as const
-                ).map(([label, value]) => (
-                  <div key={label} className="flex flex-col gap-[5px]">
-                    <div className="flex text-[11.5px]">
-                      <span className="text-[var(--muted)]">{label}</span>
-                      <span className="ml-auto max-w-[65%] truncate font-semibold text-[var(--foreground)]">
-                        {value}
-                      </span>
-                    </div>
-                    <div className="h-1 overflow-hidden rounded-full bg-[#EDEDF1]">
-                      <div
-                        className="h-full rounded-full bg-[var(--foreground)]"
-                        style={{ width: `${intensity(value)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="flex flex-col gap-1">
+            <span className="text-[13.5px] font-bold text-[var(--foreground)]">배운 것 중에 끌 것</span>
+            <span className="text-[11.5px] leading-[1.5] text-[#9C9CA6]">
+              끄면 다음 글부터 그 특징을 쓰지 않습니다. 다시 켜도 학습을 새로 돌리지 않습니다.
+            </span>
           </div>
 
-          {sampleQuote ? (
-            <div className="rounded-[11px] border border-[var(--border)] bg-white p-4">
-              <span className="text-[12.5px] font-bold text-[var(--foreground)]">
-                이 테마로 쓴 문장 예시
+          {!style ? (
+            <p className="rounded-[11px] border border-[var(--border)] bg-white p-3.5 text-[12px] text-[var(--muted)]">
+              말투 학습이 끝나면 여기서 특징을 켜고 끌 수 있습니다.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {STYLE_RULE_KEYS.map((key) => {
+                const active = isRuleActive(style.traitsJson, key);
+                return (
+                  <div
+                    key={key}
+                    className={cn(
+                      "flex items-start gap-[11px] rounded-[11px] border border-[var(--border)] p-[12px_13px]",
+                      active ? "bg-white" : "bg-[#FBFBFC]",
+                    )}
+                  >
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span
+                        className={cn(
+                          "text-[13px] font-semibold",
+                          active ? "text-[var(--foreground)]" : "text-[#8A8A94]",
+                        )}
+                      >
+                        {ruleTitle(key)}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-[11.5px] leading-[1.5]",
+                          active ? "text-[#9C9CA6]" : "text-[var(--hint)]",
+                        )}
+                      >
+                        {ruleDescription(key, style.traitsJson)}
+                      </span>
+                    </div>
+                    <Switch
+                      checked={active}
+                      disabled={ruleBusy === key}
+                      onChange={(next) => void toggleRule(key, next)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {styleMatch ? (
+            <div className="mt-auto rounded-[12px] border border-[#F0F0F3] bg-[#FBFBFC] p-[13px]">
+              <span className="[font-variant-numeric:tabular-nums] text-[12px] font-bold text-[var(--foreground)]">
+                말투 일치도 {styleMatch.score}점
               </span>
-              <p className="mt-2.5 rounded-[9px] border border-[#F0F0F3] bg-[#FBFBFC] p-3 text-[12.5px] leading-[1.8] text-[var(--muted)]">
-                {sampleQuote}
+              <p className="mt-1 text-[11.5px] leading-[1.55] text-[#9C9CA6]">
+                이 말투로 쓴 최근 {styleMatch.sampleCount}편 평균입니다. 원문을 더 넣으면 올라갑니다.
               </p>
-              {chips.length ? (
-                <div className="mt-2.5 flex flex-wrap gap-[5px]">
-                  {chips.slice(0, 8).map((c) => (
-                    <span
-                      key={c}
-                      className="flex h-[21px] items-center rounded-[5px] bg-[var(--surface-2)] px-2 text-[10.5px] font-semibold text-[var(--muted)]"
-                    >
-                      {c}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
             </div>
           ) : null}
         </div>
@@ -601,7 +652,7 @@ export function BrandWorkspace({
         <div className="rounded-[11px] border border-[var(--border)] bg-white p-4">
           <div className="flex items-center gap-2">
             <span className="text-[12.5px] font-bold text-[var(--foreground)]">
-              이 테마로 만든 글
+              이 말투로 만든 글
             </span>
             <span className="text-[11px] text-[var(--faint)]">{posts.length}개</span>
             <div className="flex-1" />
@@ -614,11 +665,12 @@ export function BrandWorkspace({
               </span>
             </NewCutLink>
             <Button type="button" size="sm" variant="danger" onClick={() => void deleteBrand()} disabled={busy === "delete"}>
-              테마 삭제
+              말투 삭제
             </Button>
-            {style ? (
+            {!style ? (
               <Link href={`/posts/new?brandId=${brandId}`}>
                 <Button type="button" size="sm">
+                  <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
                   새 글
                 </Button>
               </Link>
@@ -640,7 +692,7 @@ export function BrandWorkspace({
               ))}
             </div>
           ) : (
-            <p className="mt-3 text-[12px] text-[var(--muted)]">이 테마로 만든 글은 아직 없습니다.</p>
+            <p className="mt-3 text-[12px] text-[var(--muted)]">이 말투로 만든 글은 아직 없습니다.</p>
           )}
         </div>
       </div>

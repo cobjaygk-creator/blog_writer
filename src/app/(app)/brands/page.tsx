@@ -24,23 +24,23 @@ export default async function BrandsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[color:var(--foreground)]">
-            테마 등록
+            말투
           </h1>
           <p className="mt-2 text-sm text-[color:var(--muted)]">
-            테마를 만들고 샘플 원문으로 문체를 학습합니다. 학습이 끝나면 새 글에서 글을 만들 수
+            말투를 만들고 샘플 원문으로 학습합니다. 학습이 끝나면 새 글에서 이 말투로 글을 만들 수
             있습니다.
           </p>
         </div>
         <Link href="/brands/new">
-          <Button>새 테마</Button>
+          <Button>새 말투</Button>
         </Link>
       </div>
 
       {brands.length === 0 ? (
         <div className="mt-10 rounded-xl border border-dashed border-[var(--border)] bg-white px-4 py-10 text-center">
-          <p className="text-sm text-[color:var(--muted)]">아직 등록된 테마가 없습니다.</p>
+          <p className="text-sm text-[color:var(--muted)]">아직 등록된 말투가 없습니다.</p>
           <Link href="/brands/new" className="mt-4 inline-block">
-            <Button>테마 만들기</Button>
+            <Button>말투 만들기</Button>
           </Link>
         </div>
       ) : (
@@ -71,7 +71,7 @@ export default async function BrandsPage() {
                 <div className="flex flex-wrap gap-2">
                   <Link href={`/brands/${brand.id}`}>
                     <Button type="button" size="sm" variant="outline">
-                      샘플 학습
+                      말투 학습
                     </Button>
                   </Link>
                   {brand.styleProfile ? (

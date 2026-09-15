@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { BrandWorkspace } from "@/components/BrandWorkspace";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { scoreDraftStyle } from "@/lib/style-score";
+import { normalizeExtendedTraits } from "@/lib/style-traits";
 import { cn } from "@/lib/utils";
 
 type Props = { params: Promise<{ id: string }> };
@@ -22,7 +24,7 @@ export default async function BrandDetailPage({ params }: Props) {
         posts: {
           orderBy: { createdAt: "desc" },
           take: 30,
-          select: { id: true, title: true, status: true, keyword: true, createdAt: true },
+          select: { id: true, title: true, status: true, keyword: true, createdAt: true, body: true },
         },
       },
     }),
@@ -40,11 +42,28 @@ export default async function BrandDetailPage({ params }: Props) {
 
   if (!brand) notFound();
 
+  // Real (not fabricated) 말투 일치도 — scored from this brand's own recent post
+  // bodies against its learned traits, using the same scorer generation uses.
+  let styleMatch: { score: number; sampleCount: number } | null = null;
+  if (brand.styleProfile) {
+    const traits = normalizeExtendedTraits(brand.styleProfile.traitsJson);
+    const scored = brand.posts
+      .filter((p) => p.body?.trim())
+      .slice(0, 5)
+      .map((p) => scoreDraftStyle(p.body!, traits).score);
+    if (scored.length) {
+      styleMatch = {
+        score: Math.round((scored.reduce((sum, s) => sum + s, 0) / scored.length) * 100),
+        sampleCount: scored.length,
+      };
+    }
+  }
+
   return (
     <div className="grid grid-cols-[236px_1fr] items-start">
       <aside className="sticky top-0 flex h-[100dvh] flex-col border-r border-[var(--border)] bg-white">
         <div className="flex h-[52px] shrink-0 items-center border-b border-[var(--border)] px-[15px]">
-          <span className="text-[13.5px] font-bold text-[var(--foreground)]">테마</span>
+          <span className="text-[13.5px] font-bold text-[var(--foreground)]">말투</span>
           <Link
             href="/brands/new"
             className="ml-auto flex h-6 items-center rounded-[7px] border border-[var(--border-strong)] px-2.5 text-[11.5px] font-semibold text-[#3A3A44] hover:border-[var(--accent)] hover:text-[var(--accent)]"
@@ -116,6 +135,7 @@ export default async function BrandDetailPage({ params }: Props) {
           keyword: p.keyword,
           createdAt: p.createdAt.toISOString(),
         }))}
+        styleMatch={styleMatch}
       />
     </div>
   );
