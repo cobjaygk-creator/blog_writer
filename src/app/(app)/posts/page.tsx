@@ -10,11 +10,11 @@ const STATUS_IDS = ["collecting", "draft", "published", "archived"] as const;
 type StatusFilter = "all" | (typeof STATUS_IDS)[number];
 
 type Props = {
-  searchParams: Promise<{ status?: string; brandId?: string; sort?: string }>;
+  searchParams: Promise<{ status?: string; brandId?: string; sort?: string; view?: string }>;
 };
 
 export default async function PostsListPage({ searchParams }: Props) {
-  const { status, brandId, sort } = await searchParams;
+  const { status, brandId, sort, view } = await searchParams;
   const session = await auth();
   const userId = session!.user!.id;
 
@@ -23,6 +23,7 @@ export default async function PostsListPage({ searchParams }: Props) {
     : "all";
   const brandFilter = brandId || "all";
   const sortKey = sort === "created" ? "created" : "recent";
+  const viewMode: "table" | "board" = view === "board" ? "board" : "table";
 
   let posts: PostRow[] = [];
   const counts: Record<StatusFilter, number> = { all: 0, collecting: 0, draft: 0, published: 0, archived: 0 };
@@ -38,7 +39,7 @@ export default async function PostsListPage({ searchParams }: Props) {
           ...(brandFilter !== "all" ? { brandId: brandFilter } : {}),
         },
         orderBy: sortKey === "created" ? { createdAt: "desc" } : { updatedAt: "desc" },
-        take: 50,
+        take: viewMode === "board" ? 200 : 50,
         select: {
           id: true,
           title: true,
@@ -48,6 +49,7 @@ export default async function PostsListPage({ searchParams }: Props) {
           updatedAt: true,
           body: true,
           brand: { select: { id: true, name: true } },
+          images: { orderBy: { orderIndex: "asc" }, take: 1, select: { imageUrl: true } },
           _count: { select: { images: true } },
         },
       }),
@@ -72,6 +74,7 @@ export default async function PostsListPage({ searchParams }: Props) {
       updatedAt: r.updatedAt.toISOString(),
       brand: r.brand,
       images: r._count.images,
+      thumbnailUrl: r.images[0]?.imageUrl ?? null,
       chars: plainTextLength(r.body),
     }));
     brands = brandRows;
@@ -116,6 +119,7 @@ export default async function PostsListPage({ searchParams }: Props) {
         brandFilter={brandFilter}
         sort={sortKey}
         total={counts.all}
+        view={viewMode}
       />
     </div>
   );
