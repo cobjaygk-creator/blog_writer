@@ -13,7 +13,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { BRAND_CAPTION_TONE } from "@/lib/caption-tones";
 import { USE_DEFAULT_THEME_ID } from "@/lib/default-theme";
+import { startGenerationJobClient } from "@/lib/run-generation-job-client";
 import { cn } from "@/lib/utils";
 
 type Voice = { id: string; name: string; version: number | null };
@@ -198,7 +200,19 @@ export function HomeStart({ voices }: { voices: Voice[] }) {
         }
       }
 
-      router.push(`/posts/${postId}`);
+      await startGenerationJobClient(
+        postId,
+        route === "topic"
+          ? { kind: "generate_topic", topic: topic.trim(), length }
+          : {
+              kind: "generate",
+              keyword: topic.trim() || undefined,
+              captionTone: BRAND_CAPTION_TONE,
+              length,
+            },
+      );
+
+      router.push(`/posts/${postId}?generating=1`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "글을 만들지 못했습니다.");
       setBusy(false);
