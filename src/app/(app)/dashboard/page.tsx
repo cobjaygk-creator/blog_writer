@@ -123,7 +123,7 @@ export default async function HomePage() {
             <strong className="[font-variant-numeric:tabular-nums] text-[var(--foreground)]">
               {usage.used}
             </strong>
-            /{usage.limit === Number.MAX_SAFE_INTEGER ? "∞" : usage.limit} 글
+            /{usage.limit === Number.MAX_SAFE_INTEGER ? "∞" : usage.limit}회
             <span className="h-[5px] w-14 overflow-hidden rounded-full bg-[#EDEDF1]">
               <span
                 className="block h-full rounded-full bg-[var(--accent)]"
@@ -147,7 +147,7 @@ export default async function HomePage() {
               {name ? `안녕하세요, ${name}님` : "안녕하세요"}
             </h2>
             <p className="text-[14.5px] text-[var(--muted)]">
-              오늘은 무엇에 대해 쓸까요? 한 줄만 적으면 나머지는 제가 정리합니다.
+              오늘은 어떤 재료로 쓸까요? 셋 중 하나만 고르면 됩니다.
             </p>
           </div>
 
