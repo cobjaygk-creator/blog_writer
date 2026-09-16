@@ -90,6 +90,15 @@
   background: var(--m-accent-hover);
 }
 
+.marketing-btn-dark {
+  background: #16161a;
+  color: #fff;
+}
+
+.marketing-btn-dark:hover {
+  background: #000;
+}
+
 .marketing-btn-secondary {
   background: var(--m-surface);
   border-color: var(--m-border);

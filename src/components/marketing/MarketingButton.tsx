@@ -3,12 +3,13 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "secondary" | "ghost";
+type Variant = "primary" | "secondary" | "ghost" | "dark";
 
 const variantClass: Record<Variant, string> = {
   primary: "marketing-btn-primary",
   secondary: "marketing-btn-secondary",
   ghost: "marketing-btn-ghost",
+  dark: "marketing-btn-dark",
 };
 
 export function MarketingButton({

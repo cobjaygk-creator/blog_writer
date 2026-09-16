@@ -34,7 +34,9 @@ export function MarketingNav({
         </div>
         <div className="marketing-nav-actions">
           {signedIn ? (
-            <MarketingButton href="/dashboard">대시보드로 이동</MarketingButton>
+            <MarketingButton href="/dashboard" variant="dark">
+              대시보드로 이동
+            </MarketingButton>
           ) : (
             <>
               <MarketingButton href="/login" variant="ghost">
