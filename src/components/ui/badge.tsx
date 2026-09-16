@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const TONE = {
   neutral: "bg-[#F0F0F3] text-[#6B6B75]",
-  accent: "bg-[#EFEDFF] text-[#4B3BFF]",
+  accent: "bg-[#E8F1FF] text-[#0064FF]",
   success: "bg-[#E7F5EF] text-[#0F7B52]",
   warning: "bg-[#F4EDD8] text-[#8A6410]",
   danger: "bg-[#F7E7E5] text-[#C2453C]",

@@ -44,13 +44,13 @@ const STATUS_TONE: Record<string, BadgeTone> = {
 // collecting/draft/published/archived 4가지뿐) "보관"으로 대체했습니다.
 const BOARD_COLUMNS: { status: StatusFilter; label: string; dot: string }[] = [
   { status: "collecting", label: "준비 중", dot: "#E0A93C" },
-  { status: "draft", label: "초안", dot: "#4B3BFF" },
+  { status: "draft", label: "초안", dot: "#0064FF" },
   { status: "published", label: "올림 완료", dot: "#0F7B52" },
   { status: "archived", label: "보관", dot: "#8A8A94" },
 ];
 
 /** Stable per-voice color so the same 말투 always gets the same dot. */
-const VOICE_PALETTE = ["#4B3BFF", "#0F7B52", "#8A6410", "#C2453C", "#6B5FD6", "#0F87A8"];
+const VOICE_PALETTE = ["#0064FF", "#0F7B52", "#8A6410", "#C2453C", "#6B5FD6", "#0F87A8"];
 function voiceColor(brandId: string) {
   let hash = 0;
   for (let i = 0; i < brandId.length; i++) hash = (hash * 31 + brandId.charCodeAt(i)) >>> 0;

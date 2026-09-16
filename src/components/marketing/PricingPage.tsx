@@ -89,7 +89,7 @@ const PLANS: Plan[] = [
     cta: "프리미엄 시작",
     href: "/register",
     badge: "성장 운영 추천",
-    badgeColor: "#7c6cf5",
+    badgeColor: "#0064FF",
     features: [
       { title: "월 30회 정규 생성", note: "매일 한 편 — 검색 노출이 쌓이는 구간" },
       { title: "이미지 생성 포함" },

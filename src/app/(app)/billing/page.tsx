@@ -183,7 +183,7 @@ export default async function BillingPage() {
                 const x = i * (barW + gap);
                 const key = monthKeys[i];
                 const color =
-                  key === currentMonthKey ? "#4B3BFF" : key === prevMonthKey ? "#D8D8DE" : "#EDEDF1";
+                  key === currentMonthKey ? "#0064FF" : key === prevMonthKey ? "#D8D8DE" : "#EDEDF1";
                 return (
                   <rect key={key} x={x} y={chartH - h} width={barW} height={h} rx="3" fill={color} />
                 );

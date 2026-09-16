@@ -131,7 +131,7 @@ export function MobileGenerating({
                 setPct(4);
                 router.refresh();
               }}
-              className="flex h-12 items-center justify-center rounded-[12px] bg-[#8b7cff] text-[15px] font-semibold text-[#16161A]"
+              className="flex h-12 items-center justify-center rounded-[12px] bg-[#4C8DFF] text-[15px] font-semibold text-[#16161A]"
             >
               다시 시도
             </button>
@@ -159,7 +159,7 @@ export function MobileGenerating({
                         done
                           ? "bg-[#0F7B52]"
                           : active
-                            ? "bg-[#8b7cff]"
+                            ? "bg-[#4C8DFF]"
                             : "border-[1.5px] border-[#63636f] bg-transparent"
                       }`}
                     >
@@ -188,7 +188,7 @@ export function MobileGenerating({
             <div className="flex flex-col gap-2">
               <div className="h-1.5 overflow-hidden rounded-full bg-[#26262f]">
                 <div
-                  className="h-full rounded-full bg-[#8b7cff] transition-[width] duration-500"
+                  className="h-full rounded-full bg-[#4C8DFF] transition-[width] duration-500"
                   style={{ width: `${Math.min(100, Math.round(pct))}%` }}
                 />
               </div>
@@ -198,7 +198,7 @@ export function MobileGenerating({
             </div>
 
             <div className="rounded-[14px] border border-[#26262f] bg-[#1a1a21] px-4 py-[15px]">
-              <span className="text-[11.5px] font-bold text-[#8b7cff]">지금 하는 일</span>
+              <span className="text-[11.5px] font-bold text-[#4C8DFF]">지금 하는 일</span>
               <p className="pt-1.5 text-[14px] leading-[1.7] text-[#c9c9d2]">
                 {phaseStatusLabel(phase, "generate")}
               </p>

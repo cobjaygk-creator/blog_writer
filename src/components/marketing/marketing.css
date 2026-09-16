@@ -7,9 +7,9 @@
   --m-text: rgba(0, 0, 0, 0.85);
   --m-muted: rgba(0, 0, 0, 0.55);
   --m-faint: rgba(0, 0, 0, 0.4);
-  --m-accent: #5e56f0;
-  --m-accent-hover: #4e40c9;
-  --m-accent-soft: #5e56f01a;
+  --m-accent: #0064FF;
+  --m-accent-hover: #004FE0;
+  --m-accent-soft: #0064ff1a;
   --m-radius: 10px;
 
   background: var(--m-bg);

@@ -80,7 +80,7 @@ export default async function BrandDetailPage({ params }: Props) {
                 href={`/brands/${b.id}`}
                 className={cn(
                   "flex flex-col gap-0.5 rounded-[9px] px-[11px] py-[10px]",
-                  active ? "bg-[#EFEDFF] border border-[#DCD7FF]" : "border border-transparent hover:bg-[var(--surface-2)]",
+                  active ? "bg-[#E8F1FF] border border-[#BFDBFF]" : "border border-transparent hover:bg-[var(--surface-2)]",
                 )}
               >
                 <div className="flex items-center gap-1.5">

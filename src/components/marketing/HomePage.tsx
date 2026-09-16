@@ -104,7 +104,7 @@ const PRICING_STRIP: PricingStripItem[] = [
     unit: "1회당 약 660원",
     cta: "프리미엄 시작",
     badge: "성장 운영 추천",
-    badgeColor: "#7c6cf5",
+    badgeColor: "#0064FF",
   },
   { name: "엔터프라이즈", price: "₩39,500", quota: "월 60회 생성", unit: "1회당 약 658원", cta: "상담 요청" },
 ];
