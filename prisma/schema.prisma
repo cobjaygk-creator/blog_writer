@@ -242,6 +242,8 @@ model Post {
   /// Caption voice for vision captions. Null / brand sentinel → StyleTraits.tone
   captionTone       String?
   status            PostStatus     @default(collecting)
+  /// "이 글처럼" 참고 글 주소 — 5b 목록·발행 기록 조회 및 분쟁 증거용
+  referenceUrl      String?
   /// External blog URL after user published (manual archive; no auto-post)
   publishedUrl      String?
   publishedAt       DateTime?

@@ -15,6 +15,7 @@ const createSchema = z.object({
   keyword: z.string().trim().min(1).max(120).optional(),
   productHighlights: z.string().trim().min(1).max(2000).optional().nullable(),
   captionTone: z.string().trim().min(1).max(200).optional().nullable(),
+  referenceUrl: z.string().trim().url().max(2000).optional().nullable(),
 });
 
 export async function POST(request: Request) {
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
       keyword: parsed.data.keyword,
       productHighlights: parsed.data.productHighlights?.trim() || null,
       captionTone: parsed.data.captionTone?.trim() || BRAND_CAPTION_TONE,
+      referenceUrl: parsed.data.referenceUrl?.trim() || null,
       status: "collecting",
     },
   });

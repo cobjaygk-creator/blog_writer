@@ -41,6 +41,7 @@ export default async function PostDetailPage({ params }: Props) {
   const workspace = (
     <Suspense fallback={<p className="text-sm text-[color:var(--muted)]">편집기 준비 중…</p>}>
       <PostWorkspace
+        key={post.id}
         initialPost={{
           id: post.id,
           brandId: post.brandId,

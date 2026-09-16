@@ -10,6 +10,7 @@ export type FetchedSource = {
   title: string | null;
   text: string;
   sourceUrl: string;
+  imageCount: number;
 };
 
 export async function fetchSourceFromUrl(rawUrl: string): Promise<FetchedSource> {
@@ -63,7 +64,15 @@ export async function fetchSourceFromUrl(rawUrl: string): Promise<FetchedSource>
     title,
     text,
     sourceUrl: parsed.toString(),
+    imageCount: countImages(html),
   };
+}
+
+function countImages(html: string) {
+  const imgTags = html.match(/<img[^>]+src=/gi)?.length ?? 0;
+  // Naver SmartEditor lazy-loads via data-lazy-src on se-image spans too.
+  const lazySpans = html.match(/class=["'][^"']*se-image[^"']*["']/gi)?.length ?? 0;
+  return Math.max(imgTags, lazySpans);
 }
 
 function toFetchUrl(url: URL) {
@@ -251,7 +260,7 @@ function mostFrequent(values: string[]) {
 }
 
 function extractGenericBody(html: string) {
-  let working = html
+  const working = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");

@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { BRAND_CAPTION_TONE } from "@/lib/caption-tones";
@@ -57,7 +57,12 @@ function isUrl(value: string) {
 
 export function HomeStart({ voices }: { voices: Voice[] }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [route, setRoute] = useState<Route>(() => {
+    const fromQuery = searchParams.get("route");
+    if (fromQuery === "photo" || fromQuery === "topic" || fromQuery === "reference") {
+      return fromQuery;
+    }
     if (typeof window === "undefined") return "photo";
     try {
       const saved = window.localStorage.getItem(LAST_ROUTE_KEY);
@@ -542,8 +547,8 @@ export function HomeStart({ voices }: { voices: Voice[] }) {
                 disabled={busy || !ctaEnabled}
                 className="flex h-12 shrink-0 items-center gap-2 rounded-[12px] bg-[var(--accent)] px-6 text-[15px] font-semibold text-white shadow-[0_2px_6px_rgba(75,59,255,.35)] transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:bg-[#EDEDF1] disabled:text-[var(--hint)] disabled:shadow-none"
               >
-                초안 만들기
-                <ArrowRight className="h-[17px] w-[17px]" strokeWidth={2} />
+                {busy ? "만드는 중…" : "초안 만들기"}
+                {!busy ? <ArrowRight className="h-[17px] w-[17px]" strokeWidth={2} /> : null}
               </button>
             </div>
           </>
