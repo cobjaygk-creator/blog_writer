@@ -190,7 +190,6 @@ export function PostWorkspace({
   } | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const prevBusyRef = useRef(busy);
-  const resumeTriedRef = useRef(false);
 
   useEffect(() => {
     const wasGenerating = prevBusyRef.current === "generate";
@@ -205,8 +204,6 @@ export function PostWorkspace({
   }, [busy, needsSelection]);
 
   useEffect(() => {
-    if (resumeTriedRef.current) return;
-    resumeTriedRef.current = true;
     const wantGenerate = searchParams.get("generating") === "1";
     let cancelled = false;
     void (async () => {

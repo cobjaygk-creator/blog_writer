@@ -46,11 +46,6 @@ const LENGTH_OPTIONS: { id: "short" | "medium" | "long"; label: string }[] = [
   { id: "long", label: "길게" },
 ];
 
-function defaultCaption(topic: string, index: number) {
-  const t = topic.trim();
-  return t ? `${t} · 사진 ${index + 1}` : `현장 사진 ${index + 1}`;
-}
-
 function isUrl(value: string) {
   return /^https?:\/\/\S+$/i.test(value.trim());
 }
@@ -443,13 +438,10 @@ export function HomeStart({ voices }: { voices: Voice[] }) {
                         </span>
                       </span>
                       <input
-                        value={p.auto ? defaultCaption(topic, i) : p.caption}
+                        value={p.auto ? "" : p.caption}
                         onChange={(e) => setCaption(i, e.target.value)}
-                        placeholder="이 사진은 무엇인가요?"
-                        className={cn(
-                          "h-10 flex-1 rounded-[9px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none placeholder:text-[var(--hint)] focus:border-[var(--accent)]",
-                          p.auto ? "text-[var(--faint)]" : "text-[var(--foreground)]",
-                        )}
+                        placeholder={p.auto ? "AI가 사진을 보고 설명을 씁니다" : "이 사진은 무엇인가요?"}
+                        className="h-10 flex-1 rounded-[9px] border border-[var(--border)] bg-white px-3 text-[13px] text-[var(--foreground)] outline-none placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
                       />
                       <button
                         type="button"

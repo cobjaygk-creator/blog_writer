@@ -13,7 +13,6 @@ import { imagesToSlots } from "@/lib/image-slots";
 import { uploadMaxImagesPerPost } from "@/lib/integrations";
 import { collectLearnedSupplements } from "@/lib/learned-supplement";
 import { providerDisplayLabel } from "@/lib/llm-providers";
-import { fetchNewsImagesForTopic } from "@/lib/news-images";
 import { jobLog } from "@/lib/observability";
 import { getUserPlan } from "@/lib/plan-guards";
 import { prisma } from "@/lib/prisma";
@@ -1298,37 +1297,6 @@ async function phaseReference(
   };
 }
 
-async function ensureNewsSearchHits(
-  topic: string,
-  research: TopicResearchBrief | null,
-): Promise<TopicResearchBrief | null> {
-  if (research && (research.hits.length > 0 || research.sources.length > 0)) {
-    return research;
-  }
-  try {
-    const { collectSearchHits } = await import("@/lib/product-facts");
-    const hits = await collectSearchHits(`${topic} 뉴스`, 8, { includeImages: true });
-    if (!hits.length) return research;
-    return {
-      topic,
-      facts: [],
-      angles: [],
-      caveats: [],
-      sources: hits.slice(0, 6).map((h) => ({
-        title: h.title,
-        url: h.url,
-        note: h.content.slice(0, 160) || undefined,
-      })),
-      hits,
-      isNewsTopic: true,
-      fetchedAt: new Date().toISOString(),
-      usedFallback: true,
-    };
-  } catch {
-    return research;
-  }
-}
-
 async function phaseTopicImages(postId: string, ctx: TopicContext): Promise<TopicContext> {
   if (!ctx.plan) throw new Error("기획 결과가 없습니다.");
   const plan = ctx.plan;
@@ -1337,7 +1305,7 @@ async function phaseTopicImages(postId: string, ctx: TopicContext): Promise<Topi
   let imageErrors: Array<string | null> = new Array(targetCount).fill(null);
   let resolvedSource: TopicContext["resolvedSource"] = ctx.imageSourcePref;
   let unsplashRateLimited = false;
-  let research = ctx.research;
+  const research = ctx.research;
 
   if (ctx.imageSourcePref === "ai") {
     const queries = Array.from({ length: targetCount }, (_, i) => {
@@ -1369,48 +1337,32 @@ async function phaseTopicImages(postId: string, ctx: TopicContext): Promise<Topi
   }
 
   const filled = stockImages.filter(Boolean).length;
-  const needNews =
+  const needsFallback =
     ctx.imageSourcePref !== "ai" && (unsplashRateLimited || filled < targetCount);
 
-  if (needNews) {
-    research = await ensureNewsSearchHits(ctx.topic, research);
-  }
-
-  if (needNews && research) {
-    const news = await fetchNewsImagesForTopic({
-      sources: research.sources,
-      hits: research.hits,
-      count: targetCount,
-      folder: `posts/${postId}`,
-      topic: ctx.topic,
-    });
-
-    if (news.usedNews) {
-      for (let i = 0; i < targetCount; i++) {
-        if (!stockImages[i] && news.results[i]) {
-          stockImages[i] = news.results[i];
+  // Never scrape third-party article images as a fallback — that republishes someone
+  // else's copyrighted photo. Missing slots get an AI-generated image instead.
+  if (needsFallback) {
+    const missing = Array.from({ length: targetCount }, (_, i) => i).filter(
+      (i) => !stockImages[i],
+    );
+    if (missing.length) {
+      const queries = missing.map((i) => plan.sections[i % plan.sections.length].imagePrompt);
+      const filledIn = await fetchSceneImagesForTopic({
+        queries,
+        folder: `posts/${postId}`,
+        imageSource: "ai",
+      });
+      missing.forEach((i, idx) => {
+        if (filledIn.results[idx]) {
+          stockImages[i] = filledIn.results[idx];
           imageErrors[i] = null;
         }
-      }
-      const newsPool = news.results.filter(Boolean) as StockImageResult[];
-      let ni = 0;
-      for (let i = 0; i < targetCount; i++) {
-        if (stockImages[i]) continue;
-        while (
-          ni < newsPool.length &&
-          stockImages.some((s) => s?.imageUrl === newsPool[ni]?.imageUrl)
-        ) {
-          ni += 1;
-        }
-        if (ni >= newsPool.length) break;
-        stockImages[i] = newsPool[ni];
-        imageErrors[i] = null;
-        ni += 1;
-      }
+      });
       const hasUnsplash = stockImages.some((s) => s?.sourceMeta.provider === "unsplash");
-      const hasNews = stockImages.some((s) => s?.sourceMeta.provider === "news");
-      if (hasNews && hasUnsplash) resolvedSource = "mixed";
-      else if (hasNews) resolvedSource = "news";
+      const hasAi = stockImages.some((s) => s?.sourceMeta.provider === "ai");
+      if (hasUnsplash && hasAi) resolvedSource = "mixed";
+      else if (hasAi) resolvedSource = "ai";
     }
   }
 
@@ -1418,7 +1370,7 @@ async function phaseTopicImages(postId: string, ctx: TopicContext): Promise<Topi
     const firstErr =
       imageErrors.find(Boolean) ||
       (unsplashRateLimited
-        ? "Unsplash 한도 초과 후 관련 뉴스 이미지도 찾지 못했습니다."
+        ? "Unsplash 한도 초과 후 대체 이미지 생성도 실패했습니다."
         : "이미지를 가져오지 못했습니다.");
     throw new Error(`이미지 준비 실패: ${firstErr}`);
   }

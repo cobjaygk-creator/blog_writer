@@ -45,7 +45,7 @@ export default async function NewPostPage({ searchParams }: Props) {
     }));
     return (
       <main className="h-full min-h-0">
-        <ReferenceStart initialUrl={url || ""} voices={voices} />
+        <ReferenceStart key={url || "none"} initialUrl={url || ""} voices={voices} />
       </main>
     );
   }
