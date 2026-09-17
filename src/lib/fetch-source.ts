@@ -204,11 +204,17 @@ function looksLikeNaverChrome(text: string) {
   ];
   const hits = markers.filter((m) => text.includes(m)).length;
   if (hits >= 2) return true;
-  // Too many tiny UI lines and almost no long sentences.
-  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  if (lines.length >= 40) {
-    const long = lines.filter((l) => l.length >= 25).length;
-    if (long / lines.length < 0.08) return true;
+  // Too many tiny UI lines and almost no long sentences — but only treat this
+  // as a signal when the *total* extracted text is also short. Real posts in
+  // a terse, short-line style (common in Korean travel/photo blogs) can rack
+  // up a low long-line ratio while still holding real substance; genuine
+  // nav/menu chrome never does.
+  if (text.length < 600) {
+    const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length >= 40) {
+      const long = lines.filter((l) => l.length >= 25).length;
+      if (long / lines.length < 0.08) return true;
+    }
   }
   return false;
 }
@@ -301,6 +307,10 @@ function decodeEntities(text: string) {
 function normalizeText(text: string) {
   return decodeEntities(text)
     .replace(/\u00a0/g, " ")
+    // Zero-width space: Naver's SmartEditor pads photo-heavy posts with
+    // "empty" paragraphs made of nothing but this \u2014 strip it so those don't
+    // count as real (non-empty) lines and skew the chrome-detection ratio.
+    .replace(/\u200b/g, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
