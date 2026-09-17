@@ -41,7 +41,7 @@ export default function RegisterPage() {
       setError("가입은 됐지만 자동 로그인에 실패했습니다. 로그인 페이지에서 시도해 주세요.");
       return;
     }
-    router.push("/posts/new/start");
+    router.push("/dashboard");
     router.refresh();
   }
 

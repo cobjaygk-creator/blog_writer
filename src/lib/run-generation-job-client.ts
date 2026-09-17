@@ -1,5 +1,8 @@
 /** Browser helper: create generation job and tick until terminal. */
 
+import { phaseProgressRange, type ProgressKind } from "@/lib/generation-progress";
+import { phaseStatusLabel } from "@/lib/post-generate-job-ui";
+
 export type ClientJob = {
   id: string;
   postId: string;
@@ -126,4 +129,73 @@ export async function resumeActiveGenerationJob(
     throw new Error(job.error || "초안 생성에 실패했습니다.");
   }
   return job;
+}
+
+/**
+ * One-shot wizard flow: create the post, upload any photos, run the
+ * generation job to completion, and report progress along the way.
+ * Used by the material wizards (photo/topic/reference) so the whole thing
+ * finishes before navigating to the editor — no resume-on-mount needed.
+ */
+export async function createAndGeneratePost(input: {
+  createBody: Record<string, unknown>;
+  photos?: Array<{ file: File; caption: string; auto: boolean }>;
+  jobBody: Record<string, unknown> & { kind: ProgressKind };
+  onPhase?: (label: string, pct: number) => void;
+}): Promise<string> {
+  const { createBody, photos = [], jobBody, onPhase } = input;
+
+  const createRes = await fetch("/api/posts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(createBody),
+  });
+  const createData = (await createRes.json().catch(() => ({}))) as {
+    error?: string;
+    post?: { id: string };
+  };
+  if (!createRes.ok || !createData.post?.id) {
+    throw new Error(createData.error || "글을 만들지 못했습니다.");
+  }
+  const postId = createData.post.id;
+
+  for (const p of photos) {
+    const manual = p.auto ? "" : p.caption.trim();
+    const form = new FormData();
+    form.set("file", p.file);
+    form.set("autoCaption", manual ? "false" : "true");
+    const upRes = await fetch(`/api/posts/${postId}/images`, {
+      method: "POST",
+      body: form,
+    }).catch(() => null);
+    if (manual && upRes?.ok) {
+      const upData = (await upRes.json().catch(() => null)) as {
+        image?: { id: string };
+      } | null;
+      const imageId = upData?.image?.id;
+      if (imageId) {
+        await fetch(`/api/posts/${postId}/images/${imageId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ caption: manual }),
+        }).catch(() => undefined);
+      }
+    }
+  }
+
+  const kind = jobBody.kind === "generate_topic" || jobBody.kind === "generate_reference"
+    ? jobBody.kind
+    : "generate";
+  onPhase?.(phaseStatusLabel("pending", kind), phaseProgressRange("pending", kind).floor);
+
+  await runGenerationJobClient({
+    postId,
+    body: jobBody,
+    onPhase: (job) => {
+      const range = phaseProgressRange(job.phase, kind);
+      onPhase?.(phaseStatusLabel(job.phase, kind), range.floor);
+    },
+  });
+
+  return postId;
 }

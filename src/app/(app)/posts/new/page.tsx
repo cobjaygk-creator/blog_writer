@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { PostWizard } from "@/components/PostWizard";
-import { ReferenceStart } from "@/components/studio/ReferenceStart";
 import { StudioQuickCreate } from "@/components/studio/StudioQuickCreate";
 import { auth } from "@/lib/auth";
 import { getEntitlementSnapshot } from "@/lib/entitlements";
@@ -11,13 +10,13 @@ import { isStudioUiEnabled } from "@/lib/studio-ui";
 import { normalizeTraitsJson } from "@/lib/style-traits";
 
 type Props = {
-  searchParams: Promise<{ brandId?: string; from?: string; url?: string }>;
+  searchParams: Promise<{ brandId?: string }>;
 };
 
 export default async function NewPostPage({ searchParams }: Props) {
   const session = await auth();
   const userId = session!.user!.id;
-  const { brandId, from, url } = await searchParams;
+  const { brandId } = await searchParams;
   const brands = await prisma.brand.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
@@ -36,19 +35,6 @@ export default async function NewPostPage({ searchParams }: Props) {
       ? normalizeTraitsJson(brand.styleProfile.traitsJson).tone
       : null,
   }));
-
-  if (from === "url") {
-    const voices = brands.map((b) => ({
-      id: b.id,
-      name: b.name,
-      version: b.styleProfile?.version ?? null,
-    }));
-    return (
-      <main className="h-full min-h-0">
-        <ReferenceStart key={url || "none"} initialUrl={url || ""} voices={voices} />
-      </main>
-    );
-  }
 
   if (isStudioUiEnabled()) {
     const plan = normalizePlan(session!.user!.plan);
