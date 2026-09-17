@@ -1,18 +1,23 @@
 "use client";
 
-import { ArrowRight, Plus } from "lucide-react";
-import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { GeneratingOverlay } from "@/components/studio/wizard/GeneratingOverlay";
+import {
+  VoiceStep,
+  defaultVoiceSelection,
+  voiceSelectionBrandId,
+  voiceSelectionCaptionTone,
+  voiceSelectionLabel,
+  type Voice,
+  type VoiceSelection,
+} from "@/components/studio/wizard/VoiceStep";
 import { WizardShell } from "@/components/studio/wizard/WizardShell";
-import { USE_DEFAULT_THEME_ID } from "@/lib/default-theme";
 import { createAndGeneratePost } from "@/lib/run-generation-job-client";
 import { TOPIC_LENGTH_PRESETS, TOPIC_LENGTHS, type TopicLength } from "@/lib/topic-length";
 import { cn } from "@/lib/utils";
-
-type Voice = { id: string; name: string; version: number | null };
 
 const SUGGESTED_TOPICS = ["오늘 진행한 현장 후기", "신메뉴·신상품 소개", "자주 묻는 질문 정리"];
 
@@ -22,7 +27,7 @@ export function TopicWizard({ voices }: { voices: Voice[] }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [topic, setTopic] = useState("");
-  const [voiceId, setVoiceId] = useState<string>(voices[0]?.id ?? USE_DEFAULT_THEME_ID);
+  const [voice, setVoice] = useState<VoiceSelection>(() => defaultVoiceSelection(voices));
   const [length, setLength] = useState<TopicLength>("medium");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +58,8 @@ export function TopicWizard({ voices }: { voices: Voice[] }) {
     try {
       const postId = await createAndGeneratePost({
         createBody: {
-          brandId: voiceId === USE_DEFAULT_THEME_ID ? null : voiceId,
+          brandId: voiceSelectionBrandId(voice),
+          captionTone: voiceSelectionCaptionTone(voice),
           mode: "topic",
           keyword: topic.trim(),
         },
@@ -74,7 +80,7 @@ export function TopicWizard({ voices }: { voices: Voice[] }) {
     }
   }
 
-  const voiceName = voices.find((v) => v.id === voiceId)?.name || "기본 테마";
+  const voiceName = voiceSelectionLabel(voice, voices);
   const lengthLabel = TOPIC_LENGTH_PRESETS[length].label;
 
   const footer =
@@ -183,35 +189,7 @@ export function TopicWizard({ voices }: { voices: Voice[] }) {
               </h2>
               <p className="text-[13.5px] text-[var(--muted)]">나중에 언제든 바꿀 수 있어요.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {voices.map((v) => {
-                const selected = v.id === voiceId;
-                return (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={() => setVoiceId(v.id)}
-                    className={cn(
-                      "flex h-11 items-center gap-1.5 rounded-full px-4 text-[14px] transition-colors",
-                      selected
-                        ? "border border-[#D9D4FF] bg-[var(--accent-soft)] font-semibold text-[var(--accent)]"
-                        : "border border-[var(--border)] bg-white font-medium text-[var(--muted)] hover:border-[var(--border-strong)]",
-                    )}
-                  >
-                    {v.name}
-                    {v.version != null ? (
-                      <span className="text-[11px] font-bold opacity-75">v{v.version}</span>
-                    ) : null}
-                  </button>
-                );
-              })}
-              <Link
-                href="/brands/new"
-                className="flex h-11 items-center gap-1 rounded-full border border-dashed border-[#D4D4DB] bg-white px-4 text-[14px] font-medium text-[#8A8A94] hover:border-[var(--accent)] hover:text-[var(--accent)]"
-              >
-                <Plus className="h-3.5 w-3.5" strokeWidth={2} />새 말투
-              </Link>
-            </div>
+            <VoiceStep voices={voices} value={voice} onChange={setVoice} />
           </div>
         ) : null}
 

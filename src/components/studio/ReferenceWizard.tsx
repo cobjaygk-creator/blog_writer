@@ -1,18 +1,23 @@
 "use client";
 
-import { ArrowRight, Check, Link as LinkIcon, Plus } from "lucide-react";
-import Link from "next/link";
+import { ArrowRight, Check, Link as LinkIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { GeneratingOverlay } from "@/components/studio/wizard/GeneratingOverlay";
+import {
+  VoiceStep,
+  defaultVoiceSelection,
+  voiceSelectionBrandId,
+  voiceSelectionCaptionTone,
+  voiceSelectionLabel,
+  type Voice,
+  type VoiceSelection,
+} from "@/components/studio/wizard/VoiceStep";
 import { WizardShell } from "@/components/studio/wizard/WizardShell";
-import { USE_DEFAULT_THEME_ID } from "@/lib/default-theme";
 import { createAndGeneratePost } from "@/lib/run-generation-job-client";
 import { TOPIC_LENGTH_PRESETS, TOPIC_LENGTHS, type TopicLength } from "@/lib/topic-length";
 import { cn } from "@/lib/utils";
-
-type Voice = { id: string; name: string; version: number | null };
 
 type Preview = {
   title: string | null;
@@ -49,7 +54,7 @@ export function ReferenceWizard({
   const [preview, setPreview] = useState<Preview | null>(null);
 
   const [topic, setTopic] = useState("");
-  const [voiceId, setVoiceId] = useState<string>(voices[0]?.id ?? USE_DEFAULT_THEME_ID);
+  const [voice, setVoice] = useState<VoiceSelection>(() => defaultVoiceSelection(voices));
   const [length, setLength] = useState<TopicLength>("medium");
 
   const [busy, setBusy] = useState(false);
@@ -111,7 +116,8 @@ export function ReferenceWizard({
     try {
       const postId = await createAndGeneratePost({
         createBody: {
-          brandId: voiceId === USE_DEFAULT_THEME_ID ? null : voiceId,
+          brandId: voiceSelectionBrandId(voice),
+          captionTone: voiceSelectionCaptionTone(voice),
           mode: "worklog",
           keyword: topic.trim() || undefined,
           referenceUrl: preview.sourceUrl,
@@ -134,7 +140,7 @@ export function ReferenceWizard({
     }
   }
 
-  const voiceName = voices.find((v) => v.id === voiceId)?.name || "기본 테마";
+  const voiceName = voiceSelectionLabel(voice, voices);
   const lengthLabel = TOPIC_LENGTH_PRESETS[length].label;
 
   const footer =
@@ -315,35 +321,7 @@ export function ReferenceWizard({
                 어떤 말투로 쓸까요?
               </h2>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {voices.map((v) => {
-                const selected = v.id === voiceId;
-                return (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={() => setVoiceId(v.id)}
-                    className={cn(
-                      "flex h-11 items-center gap-1.5 rounded-full px-4 text-[14px] transition-colors",
-                      selected
-                        ? "border border-[#D9D4FF] bg-[var(--accent-soft)] font-semibold text-[var(--accent)]"
-                        : "border border-[var(--border)] bg-white font-medium text-[var(--muted)] hover:border-[var(--border-strong)]",
-                    )}
-                  >
-                    {v.name}
-                    {v.version != null ? (
-                      <span className="text-[11px] font-bold opacity-75">v{v.version}</span>
-                    ) : null}
-                  </button>
-                );
-              })}
-              <Link
-                href="/brands/new"
-                className="flex h-11 items-center gap-1 rounded-full border border-dashed border-[#D4D4DB] bg-white px-4 text-[14px] font-medium text-[#8A8A94] hover:border-[var(--accent)] hover:text-[var(--accent)]"
-              >
-                <Plus className="h-3.5 w-3.5" strokeWidth={2} />새 말투
-              </Link>
-            </div>
+            <VoiceStep voices={voices} value={voice} onChange={setVoice} />
           </div>
         ) : null}
 
