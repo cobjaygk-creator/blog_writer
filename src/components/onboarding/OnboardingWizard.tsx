@@ -366,7 +366,7 @@ export function OnboardingWizard() {
             <div className="flex h-[78px] shrink-0 items-center gap-3 border-t border-[#F0F0F3] px-[46px]">
               <button
                 type="button"
-                onClick={() => router.push("/dashboard")}
+                onClick={() => router.push("/posts/new/start")}
                 className="text-[13px] font-semibold text-[#8A8A94]"
               >
                 먼저 둘러볼게요
